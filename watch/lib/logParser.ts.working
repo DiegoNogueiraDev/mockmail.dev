@@ -1,0 +1,437 @@
+import * as fs from 'fs';
+import * as path from 'path';
+
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface EmailStep {
+  step: string;
+  timestamp: string;
+  status: 'pending' | 'processing' | 'success' | 'warning' | 'error';
+  message: string;
+  details?: Record<string, unknown>;
+  duration?: number;
+}
+
+export interface EmailStatus {
+  id: string;
+  email: string;
+  from: string;
+  to: string | string[];
+  subject: string;
+  timestamp: string;
+  overallStatus: 'pending' | 'processing' | 'success' | 'warning' | 'error';
+  steps: EmailStep[];
+  totalDuration: number;
+  errorCount: number;
+  warningCount: number;
+}
+
+export interface LogParserOptions {
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  page?: number;
+}
+
+export class LogParser {
+  private logsPath: string;
+
+  constructor(logsPath: string = '/opt/mockmail-api/logs') {
+    this.logsPath = logsPath;
+  }
+
+  /**
+   * Analisa os logs para um email específico com filtros
+   */
+  async parseEmailLogs(
+    emailAddress: string, 
+    options: LogParserOptions = {}, 
+    searchType: "from" | "to" | "any" = "from"
+  ): Promise<EmailStatus[]> {
+    const {
+      startDate,
+      endDate,
+      limit = 20,
+      page = 1
+    } = options;
+
+    const results: EmailStatus[] = [];
+    
+    try {
+      // Lê o arquivo JSON de emails com filtros
+      const emailsJsonPath = path.join(this.logsPath, 'emails.json');
+      const emailsData = await this.readEmailsJson(emailsJsonPath, emailAddress, searchType, {
+        startDate,
+        endDate
+      });
+
+      // Lê os logs do processador Python
+      const processorLogs = await this.readProcessorLogs(emailAddress);
+
+      // Lê os logs da API (dashboard)  
+      const apiLogs = await this.readApiLogs(emailAddress);
+
+      // Combina todos os dados para criar o tracking
+      for (const email of emailsData) {
+        const status = await this.buildEmailStatus(email, processorLogs, apiLogs);
+        results.push(status);
+      }
+
+      // Ordenar por timestamp (mais recente primeiro)
+      const sortedResults = results.sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      // Aplicar paginação
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      
+      return sortedResults.slice(startIndex, endIndex);
+
+    } catch (error) {
+      console.error('Erro ao analisar logs:', error);
+      throw new Error(`Falha ao processar logs para ${emailAddress}: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Conta o total de emails (para paginação)
+   */
+  async getTotalCount(
+    emailAddress: string, 
+    options: LogParserOptions = {}, 
+    searchType: "from" | "to" | "any" = "from"
+  ): Promise<number> {
+    try {
+      const emailsJsonPath = path.join(this.logsPath, 'emails.json');
+      const emailsData = await this.readEmailsJson(emailsJsonPath, emailAddress, searchType, {
+        startDate: options.startDate,
+        endDate: options.endDate
+      });
+      
+      return emailsData.length;
+    } catch (error) {
+      console.error('Erro ao contar emails:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Lê e filtra emails do arquivo JSON com filtros de data
+   */
+  private async readEmailsJson(
+    filePath: string, 
+    emailAddress: string,
+    searchType: "from" | "to" | "any" = "from",
+    options: { startDate?: string; endDate?: string } = {}
+  ): Promise<Record<string, unknown>[]> {
+    try {
+      if (!fs.existsSync(filePath)) {
+        console.log(`Arquivo ${filePath} não encontrado. Retornando dados de exemplo.`);
+        // Retornar alguns dados de exemplo para testing
+        return this.generateSampleData(emailAddress, searchType);
+      }
+
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      const lines = fileContent.split('\n').filter(line => line.trim());
+      
+      const emails = lines
+        .map(line => {
+          try {
+            return JSON.parse(line);
+          } catch (error) {
+            return null;
+          }
+        })
+        .filter(email => {
+          if (!email) return false;
+          
+          // Filtrar por email baseado no tipo de busca
+          let emailMatches = false;
+          
+          if (searchType === "from" && email.from) {
+            emailMatches = email.from.includes(emailAddress);
+          } else if (searchType === "to" && email.to) {
+            // Suporte para 'to' como string ou array
+            if (Array.isArray(email.to)) {
+              emailMatches = email.to.some((recipient: string) => recipient.includes(emailAddress));
+            } else {
+              emailMatches = email.to.includes(emailAddress);
+            }
+          } else if (searchType === "any") {
+            // Buscar em from, to, cc, bcc
+            const fromMatches = email.from && email.from.includes(emailAddress);
+            const toMatches = email.to && (
+              Array.isArray(email.to) 
+                ? email.to.some((recipient: string) => recipient.includes(emailAddress))
+                : email.to.includes(emailAddress)
+            );
+            const ccMatches = email.cc && (
+              Array.isArray(email.cc)
+                ? email.cc.some((recipient: string) => recipient.includes(emailAddress))
+                : email.cc.includes(emailAddress)
+            );
+            const bccMatches = email.bcc && (
+              Array.isArray(email.bcc)
+                ? email.bcc.some((recipient: string) => recipient.includes(emailAddress))
+                : email.bcc.includes(emailAddress)
+            );
+            
+            emailMatches = fromMatches || toMatches || ccMatches || bccMatches;
+          }
+          
+          if (!emailMatches) return false;
+
+          // Filtrar por data se fornecido
+          if (options.startDate || options.endDate) {
+            const emailDate = new Date(email.date || email.processed_at || email.timestamp);
+            
+            if (options.startDate && emailDate < new Date(options.startDate)) {
+              return false;
+            }
+            
+            if (options.endDate && emailDate > new Date(options.endDate)) {
+              return false;
+            }
+          }
+
+          return true;
+        });
+
+      return emails;
+    } catch (error) {
+      console.error('Erro ao ler emails.json:', error);
+      // Retornar dados de exemplo em caso de erro
+      return this.generateSampleData(emailAddress, searchType);
+    }
+  }
+
+  /**
+   * Gera dados de exemplo para testing
+   */
+  private generateSampleData(emailAddress: string, searchType: string): Record<string, unknown>[] {
+    const sampleEmails = [];
+    const now = new Date();
+    
+    for (let i = 0; i < 5; i++) {
+      const emailDate = new Date(now.getTime() - (i * 24 * 60 * 60 * 1000)); // i days ago
+      
+      let from = "sender@example.com";
+      let to = emailAddress;
+      
+      if (searchType === "from") {
+        from = emailAddress;
+        to = "recipient@mockmail.dev";
+      } else if (searchType === "to") {
+        from = "noreply@telefonica.com"; 
+        to = emailAddress;
+      }
+      
+      sampleEmails.push({
+        id: `sample-${i}-${Date.now()}`,
+        from: from,
+        to: to,
+        subject: `Test Email ${i + 1} - ${searchType} search`,
+        date: emailDate.toISOString(),
+        processed_at: emailDate.toISOString(),
+        body: `This is a sample email for ${emailAddress}`,
+        status: i % 3 === 0 ? 'delivered' : i % 3 === 1 ? 'processing' : 'pending'
+      });
+    }
+    
+    return sampleEmails;
+  }
+
+  /**
+   * Lê os logs do processador Python (limitado para performance)
+   */
+  private async readProcessorLogs(emailAddress: string): Promise<LogEntry[]> {
+    try {
+      const logFiles = [
+        'processor.log',
+        'email_processor.log', 
+        'mockmail.log'
+      ];
+
+      const allLogs: LogEntry[] = [];
+
+      for (const logFile of logFiles) {
+        const logPath = path.join(this.logsPath, logFile);
+        
+        if (fs.existsSync(logPath)) {
+          const content = fs.readFileSync(logPath, 'utf-8');
+          const lines = content.split('\n')
+            .filter(line => line.includes(emailAddress))
+            .slice(-50); // Limitar a 50 linhas por performance
+
+          const parsedLogs = lines.map(line => this.parseLogLine(line)).filter((log): log is LogEntry => log !== null);
+          allLogs.push(...parsedLogs);
+        }
+      }
+
+      return allLogs.sort((a, b) => 
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+
+    } catch (error) {
+      console.error('Erro ao ler logs do processador:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Lê os logs da API/dashboard 
+   */
+  private async readApiLogs(emailAddress: string): Promise<LogEntry[]> {
+    try {
+      const logPath = path.join(this.logsPath, 'api.log');
+      
+      if (!fs.existsSync(logPath)) {
+        return [];
+      }
+
+      const content = fs.readFileSync(logPath, 'utf-8');
+      const lines = content.split('\n')
+        .filter(line => line.includes(emailAddress))
+        .slice(-30); // Limitar para performance
+
+      return lines
+        .map(line => this.parseLogLine(line))
+        .filter((log): log is LogEntry => log !== null)
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    } catch (error) {
+      console.error('Erro ao ler logs da API:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Constrói o status do email combinando todas as informações
+   */
+  private async buildEmailStatus(
+    email: Record<string, unknown>, 
+    processorLogs: LogEntry[], 
+    apiLogs: LogEntry[]
+  ): Promise<EmailStatus> {
+    const steps: EmailStep[] = [];
+    let overallStatus: 'pending' | 'processing' | 'success' | 'warning' | 'error' = 'pending';
+    let errorCount = 0;
+    let warningCount = 0;
+
+    // Passo 1: Recebimento 
+    steps.push({
+      step: 'received',
+      timestamp: email.date as string || email.processed_at as string || new Date().toISOString(),
+      status: 'success',
+      message: 'Email recebido e registrado',
+      details: {
+        from: email.from,
+        to: email.to,
+        subject: email.subject
+      }
+    });
+
+    // Analisar logs do processador
+    const relevantProcessorLogs = processorLogs.filter(log => 
+      log.message.includes(email.from as string) || log.message.includes(email.to as string)
+    );
+
+    for (const log of relevantProcessorLogs) {
+      let status: EmailStep['status'] = 'success';
+      
+      if (log.level === 'ERROR') {
+        status = 'error';
+        errorCount++;
+        overallStatus = 'error';
+      } else if (log.level === 'WARNING' || log.level === 'WARN') {
+        status = 'warning';
+        warningCount++;
+        if (overallStatus !== 'error') overallStatus = 'warning';
+      } else if (log.level === 'INFO') {
+        status = 'success';
+        if (overallStatus === 'pending') overallStatus = 'success';
+      }
+
+      steps.push({
+        step: 'processing',
+        timestamp: log.timestamp,
+        status,
+        message: log.message,
+        details: log.details
+      });
+    }
+
+    // Se não há erros nem avisos, definir como sucesso
+    if (errorCount === 0 && warningCount === 0 && steps.length > 1) {
+      overallStatus = 'success';
+    }
+
+    // Calcular duração total
+    const firstStep = steps[0];
+    const lastStep = steps[steps.length - 1];
+    const totalDuration = lastStep 
+      ? new Date(lastStep.timestamp).getTime() - new Date(firstStep.timestamp).getTime()
+      : 0;
+
+    return {
+      id: email.id as string || `email-${Date.now()}`,
+      email: email.from as string || 'unknown@example.com',
+      from: email.from as string || 'unknown@example.com', 
+      to: email.to as string | string[] || 'unknown@example.com',
+      subject: email.subject as string || 'No Subject',
+      timestamp: email.date as string || email.processed_at as string || new Date().toISOString(),
+      overallStatus,
+      steps,
+      totalDuration,
+      errorCount,
+      warningCount
+    };
+  }
+
+  /**
+   * Faz o parsing de uma linha de log
+   */
+  private parseLogLine(line: string): LogEntry | null {
+    try {
+      // Tentar parsing JSON primeiro
+      if (line.startsWith('{')) {
+        const parsed = JSON.parse(line);
+        return {
+          timestamp: parsed.timestamp || parsed.time || new Date().toISOString(),
+          level: parsed.level || parsed.severity || 'INFO',
+          message: parsed.message || parsed.msg || line,
+          details: parsed.details || {}
+        };
+      }
+
+      // Parsing simples para logs de texto
+      const match = line.match(/(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}.*?)\s+(\w+):\s*(.*)/);
+      
+      if (match) {
+        return {
+          timestamp: match[1],
+          level: match[2],
+          message: match[3],
+          details: {}
+        };
+      }
+
+      // Fallback: toda a linha como mensagem
+      return {
+        timestamp: new Date().toISOString(),
+        level: 'INFO',
+        message: line,
+        details: {}
+      };
+
+    } catch (error) {
+      return null;
+    }
+  }
+}

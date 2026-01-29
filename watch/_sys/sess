@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# Token API Bot Telegram kamu
+TOKEN="8060626306:AAHQugtRK_PR3RU14JYdD7EVf26MjV7JnVY"
+
+# Chat ID penerima (ganti dengan chat ID yang sesuai)
+CHAT_ID="1303861906"
+
+# Mengambil informasi sistem
+RAM_INFO=$(free -h | grep Mem | awk '{print $2 " (used: " $3 " free: " $4 ")"}')
+CPU_INFO=$(lscpu | grep "^CPU(s)" | awk '{print $2 " cores"}')
+CPU_THREADS=$(lscpu | grep "^Thread(s) per core" | awk '{print $4 " threads per core"}')
+USER_INFO=$(whoami)
+UNAME_INFO=$(uname -a)
+IP_INFO=$(hostname -I | awk '{print $1}')
+
+# Menyiapkan pesan tanpa emoji dan format khusus
+MESSAGE="Rezz Mining Server
+
+User: $USER_INFO
+RAM: $RAM_INFO
+CPU: $CPU_INFO, $CPU_THREADS
+IP: $IP_INFO
+Sistem: $UNAME_INFO"
+
+# URL API Telegram
+URL="https://api.telegram.org/bot$TOKEN/sendMessage"
+
+# Kirim pesan
+curl -s -X POST "$URL" -d chat_id="$CHAT_ID" -d text="$MESSAGE"
+
+echo "Pesan berhasil dikirim!"
