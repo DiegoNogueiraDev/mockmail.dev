@@ -1,0 +1,25 @@
+[Unit]
+Description=Email Processor Service
+After=network.target postfix.service
+Requires=postfix.service
+
+[Service]
+Type=simple
+User=email-processor
+Group=email-processor
+ExecStart=/opt/mockmail/venv/bin/python /opt/mockmail/email_processor.py
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/mockmail/email_processor_stdout.log
+StandardError=append:/var/log/mockmail/email_processor_stderr.log
+
+# Limites de segurança e recursos
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+RestrictNamespaces=true
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
