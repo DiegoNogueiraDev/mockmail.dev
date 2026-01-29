@@ -1,0 +1,30 @@
+[Unit]
+Description=MockMail Email Processor
+Documentation=https://github.com/DiegoNogueiraDev/mockmail.dev
+After=network-online.target postfix.service docker.service mockmail-api.service
+Wants=network-online.target
+Requires=postfix.service docker.service
+
+[Service]
+Type=simple
+User=email-processor
+Group=email-processor
+WorkingDirectory=/opt/mockmail
+ExecStartPre=/bin/sleep 5
+ExecStart=/opt/mockmail/venv/bin/python /opt/mockmail/email_processor.py
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=email-processor
+TimeoutStartSec=60
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/log/mockmail
+ReadWritePaths=/tmp
+
+[Install]
+WantedBy=multi-user.target
