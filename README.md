@@ -27,7 +27,7 @@ mockmail/
 
 1. Clone o repositório:
 ```bash
-git clone <repo-url> /home/anaopcd/mockmail
+git clone https://github.com/DiegoNogueiraDev/mockmail.dev.git /home/anaopcd/mockmail
 cd /home/anaopcd/mockmail
 ```
 
