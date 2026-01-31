@@ -5,36 +5,45 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Stage 1: Dependencies
-# -----------------------------------------------------------------------------
-FROM node:20-alpine AS deps
-
-WORKDIR /app
-
-# Instalar dependências de build
-RUN apk add --no-cache python3 make g++
-
-# Copiar arquivos de dependências
-COPY package.json package-lock.json* ./
-
-# Instalar dependências
-RUN npm ci --only=production && npm cache clean --force
-
-# -----------------------------------------------------------------------------
-# Stage 2: Builder
+# Stage 1: Builder (com todas as dependências para compilação)
 # -----------------------------------------------------------------------------
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copiar dependências do stage anterior
-COPY --from=deps /app/node_modules ./node_modules
+# Instalar dependências de build nativas
+RUN apk add --no-cache python3 make g++
+
+# Copiar arquivos de dependências
+COPY package.json package-lock.json* ./
+
+# Instalar TODAS as dependências (incluindo devDependencies para build)
+RUN npm ci && npm cache clean --force
 
 # Copiar código fonte
 COPY . .
 
+# Gerar Prisma Client se existir schema
+RUN if [ -f "prisma/schema.prisma" ]; then npx prisma generate; fi
+
 # Build da aplicação TypeScript
 RUN npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 2: Production Dependencies
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+
+# Instalar dependências de build nativas (necessárias para bcrypt, etc)
+RUN apk add --no-cache python3 make g++
+
+# Copiar arquivos de dependências
+COPY package.json package-lock.json* ./
+
+# Instalar apenas dependências de produção
+RUN npm ci --only=production && npm cache clean --force
 
 # -----------------------------------------------------------------------------
 # Stage 3: Runner (Produção)
@@ -56,11 +65,12 @@ RUN apk add --no-cache curl
 
 # Copiar arquivos necessários
 COPY --from=builder --chown=mockmail:nodejs /app/dist ./dist
-COPY --from=builder --chown=mockmail:nodejs /app/node_modules ./node_modules
+COPY --from=deps --chown=mockmail:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=mockmail:nodejs /app/package.json ./package.json
 
-# Copiar Prisma se existir
+# Copiar Prisma Client gerado se existir
 COPY --from=builder --chown=mockmail:nodejs /app/prisma ./prisma 2>/dev/null || true
+COPY --from=builder --chown=mockmail:nodejs /app/src/generated ./src/generated 2>/dev/null || true
 
 # Mudar para usuário não-root
 USER mockmail
