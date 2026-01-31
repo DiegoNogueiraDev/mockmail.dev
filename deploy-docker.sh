@@ -175,12 +175,33 @@ get_project_name() {
     echo "${PROJECT_NAMES[$ENVIRONMENT]}"
 }
 
+# Detectar comando docker compose (v2 ou v1)
+DOCKER_COMPOSE_CMD=""
+
+detect_docker_compose() {
+    # Tentar docker-compose (v1 - standalone) PRIMEIRO
+    # Prioriza v1 pois é mais comum em servidores de produção
+    if command -v docker-compose &> /dev/null; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+        return 0
+    fi
+
+    # Tentar docker compose (v2 - integrado ao Docker)
+    # Usa subshell para evitar problemas com set -e
+    if (docker compose version) &> /dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker compose"
+        return 0
+    fi
+
+    return 1
+}
+
 # Comando docker compose base
 docker_compose() {
     local compose_file=$(get_compose_file)
     local project_name=$(get_project_name)
 
-    docker compose -f "$PROJECT_ROOT/$compose_file" -p "$project_name" "$@"
+    $DOCKER_COMPOSE_CMD -f "$PROJECT_ROOT/$compose_file" -p "$project_name" "$@"
 }
 
 # Verificar pré-requisitos
@@ -194,12 +215,19 @@ check_prerequisites() {
     fi
     log_success "Docker $(docker --version | cut -d' ' -f3 | tr -d ',')"
 
-    # Docker Compose
-    if ! docker compose version &> /dev/null; then
+    # Docker Compose (v2 ou v1)
+    if ! detect_docker_compose; then
         log_error "Docker Compose não encontrado!"
+        log_info "Instale com: sudo apt install docker-compose-plugin"
+        log_info "Ou: sudo apt install docker-compose"
         exit 1
     fi
-    log_success "Docker Compose $(docker compose version --short)"
+
+    if [ "$DOCKER_COMPOSE_CMD" = "docker compose" ]; then
+        log_success "Docker Compose v2 ($($DOCKER_COMPOSE_CMD version --short 2>/dev/null || echo 'OK'))"
+    else
+        log_success "Docker Compose v1 ($($DOCKER_COMPOSE_CMD --version | cut -d' ' -f3 2>/dev/null || echo 'OK'))"
+    fi
 
     # Verificar compose file
     local compose_file=$(get_compose_file)
