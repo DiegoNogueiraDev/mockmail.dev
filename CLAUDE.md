@@ -66,3 +66,4 @@ cd api && npm test
 - `api-structure.md` - Detalhes do backend
 - `watch-structure.md` - Detalhes do dashboard
 - `commands-and-scripts.md` - Comandos úteis
+- evite regressões de funcionalidades do projeto
