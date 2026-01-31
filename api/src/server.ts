@@ -4,6 +4,7 @@ import express from "express";
 import helmet from "helmet";
 import mongoSanitize from "express-mongo-sanitize";
 import hpp from "hpp";
+import cookieParser from "cookie-parser";
 import { connectToMongoDB } from "./config/mongodb";
 import { connectToRedis } from "./config/redis";
 import { errorHandler } from "./middlewares/errorHandler";
@@ -54,6 +55,10 @@ logger.info("✓ HPP protection ativado");
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
+// Cookie Parser (required for CSRF and httpOnly auth cookies)
+app.use(cookieParser());
+logger.info("✓ Cookie parser ativado");
+
 // CORS
 const allowedOrigins = [
   "https://mockmail.dev",
@@ -65,7 +70,7 @@ const allowedOrigins = [
 const corsOptions = {
   origin: allowedOrigins,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-CSRF-Token"],
   credentials: true,
   maxAge: 86400
 };

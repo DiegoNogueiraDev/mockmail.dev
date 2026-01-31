@@ -9,6 +9,8 @@ import logger from "../utils/logger";
 import { parseBody } from "../utils/bodyParser";
 import { getLatestEmailFromBox } from "../services/email.service";
 import { extractEmail as extractEmailUtil } from "../utils/emailParser";
+import Email from "../models/Email";
+import EmailBox from "../models/EmailBox";
 
 // Function to extract email from `from` field
 const extractEmail = (rawFrom: string): string => {
@@ -241,6 +243,157 @@ export const getLatestEmailBySubject = async (req: Request, res: Response) => {
       }`
     );
     return res.status(500).json({ message: "Erro interno do servidor." });
+  }
+};
+
+
+/**
+ * List all emails for the authenticated user (across all boxes)
+ */
+export const listEmails = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userId = user?._id || user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Not authenticated" });
+    }
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const skip = (page - 1) * limit;
+
+    // Get user's boxes
+    const userBoxes = await EmailBox.find({ userId }).select('address').lean();
+    const boxAddresses = userBoxes.map(box => box.address);
+
+    if (boxAddresses.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        pagination: { page, limit, total: 0, totalPages: 0 },
+      });
+    }
+
+    const [emails, total] = await Promise.all([
+      Email.find({ to: { $in: boxAddresses } })
+        .sort({ date: -1, processedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select('from to subject date processedAt')
+        .lean(),
+      Email.countDocuments({ to: { $in: boxAddresses } }),
+    ]);
+
+    const formattedEmails = emails.map((email: any) => ({
+      id: email._id,
+      from: email.from,
+      to: email.to,
+      subject: email.subject,
+      receivedAt: email.date || email.processedAt,
+      boxAddress: email.to,
+    }));
+
+    logger.info(`CONTROL-MAIL - Listed ${emails.length} emails for user ${userId}`);
+    res.status(200).json({
+      success: true,
+      data: formattedEmails,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    logger.error(`CONTROL-MAIL - Error listing emails: ${(error as Error).message}`);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * Get a single email by ID
+ */
+export const getEmailById = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userId = user?._id || user?.id;
+    const { id } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Not authenticated" });
+    }
+
+    // Get user's boxes to verify ownership
+    const userBoxes = await EmailBox.find({ userId }).select('address').lean();
+    const boxAddresses = userBoxes.map(box => box.address);
+
+    // Find email and verify it belongs to one of user's boxes
+    const email = await Email.findOne({ 
+      _id: id, 
+      to: { $in: boxAddresses } 
+    }).lean();
+
+    if (!email) {
+      return res.status(404).json({ success: false, message: "Email not found" });
+    }
+
+    logger.info(`CONTROL-MAIL - Retrieved email ${id} for user ${userId}`);
+    res.status(200).json({
+      success: true,
+      data: {
+        id: email._id,
+        from: email.from,
+        to: email.to,
+        subject: email.subject,
+        body: email.body,
+        date: email.date,
+        contentType: email.contentType,
+        processedAt: email.processedAt,
+        boxAddress: email.to,
+      },
+    });
+  } catch (error) {
+    logger.error(`CONTROL-MAIL - Error getting email: ${(error as Error).message}`);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * Delete an email by ID
+ */
+export const deleteEmail = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userId = user?._id || user?.id;
+    const { id } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Not authenticated" });
+    }
+
+    // Get user's boxes to verify ownership
+    const userBoxes = await EmailBox.find({ userId }).select('address').lean();
+    const boxAddresses = userBoxes.map(box => box.address);
+
+    // Find and delete email
+    const email = await Email.findOneAndDelete({ 
+      _id: id, 
+      to: { $in: boxAddresses } 
+    });
+
+    if (!email) {
+      return res.status(404).json({ success: false, message: "Email not found" });
+    }
+
+    logger.info(`CONTROL-MAIL - Deleted email ${id} for user ${userId}`);
+    res.status(200).json({
+      success: true,
+      message: "Email deleted successfully",
+    });
+  } catch (error) {
+    logger.error(`CONTROL-MAIL - Error deleting email: ${(error as Error).message}`);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 

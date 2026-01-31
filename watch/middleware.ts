@@ -1,92 +1,95 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// Rotas públicas que não requerem autenticação
+/**
+ * Next.js Middleware para proteção de rotas MockMail
+ *
+ * IMPORTANTE: Este middleware roda no Edge Runtime e tem acesso limitado.
+ * Não conseguimos validar JWT aqui (falta crypto), mas podemos:
+ * 1. Verificar se o cookie de access_token existe
+ * 2. Redirecionar para login se não existir
+ *
+ * A validação real do token acontece no backend via API.
+ */
+
+// Rotas públicas (não requerem autenticação)
 const PUBLIC_ROUTES = [
+  '/login',
+  '/api/auth/login',
+  '/api/auth/refresh',
+  '/api/csrf-token',
   '/api/health',
-  '/_next',
-  '/favicon.ico',
 ];
 
-// Verificar se a rota é pública
-function isPublicRoute(pathname: string): boolean {
-  return PUBLIC_ROUTES.some(route => pathname.startsWith(route));
-}
+// Rotas estáticas que não devem ser interceptadas
+const STATIC_ROUTES = [
+  '/_next',
+  '/favicon',
+  '/static',
+  '/images',
+  '/public',
+];
 
-export async function middleware(request: NextRequest) {
+// Nome do cookie de access token (mesmo do backend)
+const ACCESS_TOKEN_COOKIE = 'mockmail_access_token';
+
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Permitir rotas públicas
-  if (isPublicRoute(pathname)) {
+  // 1. Ignorar rotas estáticas
+  if (STATIC_ROUTES.some((route) => pathname.startsWith(route))) {
     return NextResponse.next();
   }
 
-  // Apenas proteger rotas de API
-  if (!pathname.startsWith('/api/')) {
+  // 2. Permitir rotas públicas
+  if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route))) {
     return NextResponse.next();
   }
 
-  // Extrair token do header Authorization
-  const authHeader = request.headers.get('authorization');
-  const token = authHeader?.replace('Bearer ', '');
+  // 3. Verificar se existe cookie de autenticação
+  const accessToken = request.cookies.get(ACCESS_TOKEN_COOKIE);
 
-  if (!token) {
-    return NextResponse.json(
-      { error: 'Unauthorized: No token provided' },
-      { status: 401 }
-    );
+  // 4. Se não está autenticado e tenta acessar área protegida
+  if (!accessToken && pathname.startsWith('/admin')) {
+    const loginUrl = new URL('/login', request.url);
+    // Salvar URL original para redirect após login
+    loginUrl.searchParams.set('callbackUrl', pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
-  // Validar token com a API principal
-  try {
-    const apiUrl = process.env.API_URL || 'http://localhost:3000';
-    const response = await fetch(`${apiUrl}/api/auth/verify`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Invalid token' }));
-      return NextResponse.json(
-        { error: error.message || 'Invalid token' },
-        { status: 401 }
-      );
+  // 5. Se está na raiz, redirecionar baseado no status de autenticação
+  if (pathname === '/') {
+    if (accessToken) {
+      return NextResponse.redirect(new URL('/admin/dashboard', request.url));
+    } else {
+      return NextResponse.redirect(new URL('/login', request.url));
     }
-
-    // Token válido - adicionar info do usuário ao header para downstream
-    const userData = await response.json();
-    const requestHeaders = new Headers(request.headers);
-    requestHeaders.set('x-user-id', userData.user?.id || '');
-    requestHeaders.set('x-user-email', userData.user?.email || '');
-    requestHeaders.set('x-user-role', userData.user?.role || 'user');
-
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-
-    // Se a API principal estiver indisponível, permitir em desenvolvimento
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('Auth API unavailable in development - allowing request');
-      return NextResponse.next();
-    }
-
-    return NextResponse.json(
-      { error: 'Authentication service unavailable' },
-      { status: 503 }
-    );
   }
+
+  // 6. Se está autenticado e tenta acessar login, redirecionar para dashboard
+  if (accessToken && pathname === '/login') {
+    return NextResponse.redirect(new URL('/admin/dashboard', request.url));
+  }
+
+  // 7. Proteger rotas de API que não são públicas
+  if (pathname.startsWith('/api/') && !PUBLIC_ROUTES.some(r => pathname.startsWith(r))) {
+    // API routes são protegidas pelo authMiddleware no backend
+    return NextResponse.next();
+  }
+
+  // 8. Permitir acesso
+  return NextResponse.next();
 }
 
 export const config = {
   matcher: [
-    // Proteger todas as rotas de API exceto health
-    '/api/:path*',
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public files
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.svg$|.*\\.jpg$|.*\\.jpeg$|.*\\.gif$|.*\\.webp$).*)',
   ],
 };

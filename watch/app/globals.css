@@ -1,26 +1,605 @@
 @import "tailwindcss";
 
+/* ========================================
+   TEMA MOCKMAIL - Email Temporário para Testes
+   Cores: Magenta (#e2498a) + Roxo (#5636d1)
+   Baseado no tema Hefesto com ajustes para MockMail
+   ======================================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Cores da marca MockMail */
+  --mockmail-magenta: #e2498a;
+  --mockmail-purple: #5636d1;
+  --mockmail-purple-dark: #4329a8;
+  --mockmail-dark: #1a1a2e;
+  --mockmail-dark-blue: #16213e;
+
+  /* Foreground/Background */
+  --foreground-rgb: 17, 24, 39;
+  --background-rgb: 249, 250, 251;
+
+  /* Tema claro forçado */
+  color-scheme: light only !important;
 }
 
+/* Tailwind v4 theme customization */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Colors */
+  --color-background: rgb(var(--background-rgb));
+  --color-foreground: rgb(var(--foreground-rgb));
+  --color-mockmail-magenta: var(--mockmail-magenta);
+  --color-mockmail-purple: var(--mockmail-purple);
+  --color-mockmail-purple-dark: var(--mockmail-purple-dark);
+  --color-mockmail-dark: var(--mockmail-dark);
+
+  /* Custom brand colors for easy access */
+  --color-brand-primary: var(--mockmail-magenta);
+  --color-brand-secondary: var(--mockmail-purple);
+
+  /* Fonts */
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Animations */
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-slide-up: slide-up 0.3s ease-out;
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* Custom animations */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Previne detecção de tema escuro pelo navegador */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: light only !important;
+  }
+  html {
+    color-scheme: light only !important;
   }
 }
 
+html {
+  color-scheme: light only !important;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: rgb(var(--foreground-rgb));
+  background-color: rgb(var(--background-rgb));
+}
+
+/* ========================================
+   COMPONENTES BASE COM TEMA MOCKMAIL
+   ======================================== */
+
+@layer base {
+  /* Focus ring com cor da marca */
+  *:focus-visible {
+    outline: 2px solid var(--mockmail-magenta);
+    outline-offset: 2px;
+  }
+
+  /* Selection com cor da marca */
+  ::selection {
+    background-color: rgba(226, 73, 138, 0.2);
+    color: #111827;
+  }
+}
+
+@layer components {
+  /* ===== BOTÕES ===== */
+
+  /* Botão primário com gradiente da marca */
+  .btn-brand {
+    @apply px-6 py-3 text-white font-semibold rounded-2xl transition-all duration-300;
+    background: linear-gradient(135deg, #e2498a, #5636d1);
+  }
+
+  .btn-brand:hover {
+    box-shadow: 0 10px 40px rgba(226, 73, 138, 0.4);
+    transform: translateY(-2px);
+  }
+
+  .btn-brand:active {
+    transform: translateY(0);
+  }
+
+  .btn-brand:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Botão secundário */
+  .btn-secondary {
+    @apply px-6 py-3 bg-white border-2 border-gray-200 text-gray-700 font-semibold rounded-2xl transition-all duration-300;
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--mockmail-magenta);
+    color: var(--mockmail-magenta);
+  }
+
+  /* Botão outline */
+  .btn-outline {
+    @apply px-6 py-3 bg-transparent border-2 font-semibold rounded-2xl transition-all duration-300;
+    border-color: var(--mockmail-purple);
+    color: var(--mockmail-purple);
+  }
+
+  .btn-outline:hover {
+    background: var(--mockmail-purple);
+    color: white;
+  }
+
+  /* Botão danger */
+  .btn-danger {
+    @apply px-6 py-3 bg-red-600 text-white font-semibold rounded-2xl transition-all duration-300;
+  }
+
+  .btn-danger:hover {
+    @apply bg-red-700;
+    box-shadow: 0 10px 40px rgba(220, 38, 38, 0.3);
+  }
+
+  /* Botão small */
+  .btn-sm {
+    @apply px-4 py-2 text-sm;
+  }
+
+  /* ===== CARDS ===== */
+
+  /* Card padrão */
+  .card-brand {
+    @apply bg-white rounded-2xl border border-gray-200 shadow-md;
+  }
+
+  /* Card com accent */
+  .card-brand-accent {
+    @apply rounded-2xl border;
+    background: linear-gradient(135deg, rgba(86, 54, 209, 0.08), rgba(226, 73, 138, 0.08));
+    border-color: rgba(86, 54, 209, 0.2);
+  }
+
+  /* Card hover effect */
+  .card-hover {
+    @apply transition-all duration-300;
+  }
+
+  .card-hover:hover {
+    @apply shadow-lg;
+    transform: translateY(-2px);
+  }
+
+  /* ===== INPUTS ===== */
+
+  /* Input padrão */
+  .input-brand {
+    @apply w-full px-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-2xl text-gray-900 placeholder:text-gray-400 transition-all duration-300;
+  }
+
+  .input-brand:focus {
+    @apply bg-white outline-none;
+    border-color: var(--mockmail-magenta);
+    box-shadow: 0 0 0 4px rgba(226, 73, 138, 0.15);
+  }
+
+  .input-brand:disabled {
+    @apply opacity-60 cursor-not-allowed;
+  }
+
+  /* Input error state */
+  .input-error {
+    border-color: #dc2626 !important;
+  }
+
+  .input-error:focus {
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.15) !important;
+  }
+
+  /* ===== BADGES ===== */
+
+  .badge-brand {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+    background-color: rgba(226, 73, 138, 0.15);
+    color: var(--mockmail-magenta);
+  }
+
+  .badge-brand-purple {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+    background-color: rgba(86, 54, 209, 0.15);
+    color: var(--mockmail-purple);
+  }
+
+  .badge-success {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+    background-color: rgba(5, 150, 105, 0.15);
+    color: #047857;
+  }
+
+  .badge-error {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+    background-color: rgba(185, 28, 28, 0.15);
+    color: #b91c1c;
+  }
+
+  .badge-warning {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+    background-color: rgba(161, 98, 7, 0.15);
+    color: #a16207;
+  }
+
+  .badge-info {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+    background-color: rgba(29, 78, 216, 0.15);
+    color: #1d4ed8;
+  }
+
+  /* ===== TEXTOS ===== */
+
+  /* Gradiente de texto */
+  .text-gradient-brand {
+    background: linear-gradient(135deg, #e2498a, #5636d1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Linha decorativa com gradiente */
+  .line-gradient-brand {
+    background: linear-gradient(90deg, #e2498a, #5636d1);
+  }
+
+  /* ===== SIDEBAR ===== */
+
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 transition-all duration-200;
+  }
+
+  .sidebar-link:hover {
+    @apply bg-gray-100 text-gray-900;
+  }
+
+  .sidebar-link.active {
+    background: linear-gradient(135deg, rgba(86, 54, 209, 0.1), rgba(226, 73, 138, 0.1));
+    color: var(--mockmail-purple);
+    border-left: 3px solid var(--mockmail-magenta);
+  }
+
+  /* ===== TABLES ===== */
+
+  .table-brand {
+    @apply w-full text-left border-collapse;
+  }
+
+  .table-brand th {
+    @apply px-4 py-3 text-sm font-semibold text-gray-700 bg-gray-50 border-b border-gray-200;
+  }
+
+  .table-brand td {
+    @apply px-4 py-3 text-sm text-gray-600 border-b border-gray-100;
+  }
+
+  .table-brand tbody tr:hover {
+    @apply bg-gray-50;
+  }
+
+  /* ===== LOADING ===== */
+
+  .loading-spinner {
+    @apply w-8 h-8 border-4 border-gray-200 rounded-full;
+    border-top-color: var(--mockmail-magenta);
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ===== EMPTY STATE ===== */
+
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-16 text-center;
+  }
+
+  .empty-state-icon {
+    @apply w-16 h-16 mb-4 text-gray-300;
+  }
+
+  .empty-state-title {
+    @apply text-lg font-semibold text-gray-700 mb-2;
+  }
+
+  .empty-state-description {
+    @apply text-gray-500 mb-6 max-w-md;
+  }
+}
+
+/* ========================================
+   CORREÇÃO DE CONTRASTE GLOBAL (WCAG AAA)
+   ======================================== */
+
+input,
+select,
+textarea {
+  color: #111827 !important;
+  background-color: #ffffff !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #6b7280 !important;
+  -webkit-text-fill-color: #6b7280 !important;
+  opacity: 1;
+}
+
+select option {
+  color: #111827 !important;
+  background-color: #ffffff !important;
+}
+
+label {
+  color: #374151 !important;
+}
+
+/* ========================================
+   SCROLLBAR PERSONALIZADA
+   ======================================== */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(86, 54, 209, 0.3) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(86, 54, 209, 0.3);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(86, 54, 209, 0.5);
+}
+
+/* ========================================
+   ACESSIBILIDADE WCAG AAA
+   ======================================== */
+
+@layer base {
+  /* Correções de contraste para textos cinza */
+  .text-gray-400 {
+    color: #4b5563 !important;
+  }
+
+  .text-gray-300 {
+    color: #4b5563 !important;
+  }
+
+  .text-gray-500 {
+    color: #374151 !important;
+  }
+
+  /* Cores semânticas com alto contraste */
+  .text-emerald-400,
+  .text-green-400 {
+    color: #047857 !important;
+  }
+
+  .text-blue-400 {
+    color: #1d4ed8 !important;
+  }
+
+  .text-purple-400 {
+    color: #6d28d9 !important;
+  }
+
+  .text-red-400 {
+    color: #b91c1c !important;
+  }
+
+  .text-yellow-400 {
+    color: #a16207 !important;
+  }
+}
+
+/* Texto secundário acessível */
+.text-muted {
+  color: #4b5563 !important;
+}
+
+.text-muted-foreground {
+  color: #374151 !important;
+}
+
+/* Texto de helper */
+.text-helper {
+  color: #4b5563 !important;
+  font-size: 0.875rem;
+}
+
+/* Tabelas */
+th {
+  color: #1f2937 !important;
+}
+
+td {
+  color: #111827;
+}
+
+/* Formulários */
+.form-error,
+.error-text {
+  color: #b91c1c !important;
+}
+
+.form-success,
+.success-text {
+  color: #047857 !important;
+}
+
+/* ========================================
+   REDUCED MOTION (WCAG AAA 2.3.3)
+   ======================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .loading-spinner {
+    animation: none !important;
+    border: 4px solid var(--mockmail-magenta) !important;
+    border-top-color: transparent !important;
+  }
+}
+
+/* ========================================
+   SKIP LINK (WCAG AAA 2.4.1)
+   ======================================== */
+
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--mockmail-purple);
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 0 0 1rem 1rem;
+  z-index: 9999;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: 3px solid var(--mockmail-magenta);
+  outline-offset: 2px;
+}
+
+/* ========================================
+   ENHANCED FOCUS STATES (WCAG AAA 2.4.7)
+   ======================================== */
+
+/* High visibility focus for all interactive elements */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--mockmail-magenta) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 6px rgba(226, 73, 138, 0.25) !important;
+}
+
+/* Focus within for form groups */
+.form-group:focus-within {
+  outline: 2px solid rgba(226, 73, 138, 0.5);
+  outline-offset: 4px;
+  border-radius: 1rem;
+}
+
+/* ========================================
+   HIGH CONTRAST MODE SUPPORT
+   ======================================== */
+
+@media (forced-colors: active) {
+  .btn-brand,
+  .btn-secondary,
+  .btn-outline,
+  .btn-danger {
+    border: 2px solid currentColor !important;
+  }
+
+  .card-brand {
+    border: 2px solid currentColor !important;
+  }
+
+  .sidebar-link.active {
+    border: 2px solid currentColor !important;
+    background: Mark !important;
+    color: MarkText !important;
+  }
+}
+
+/* ========================================
+   UTILITÁRIOS
+   ======================================== */
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Screen reader only */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Focus visible helper */
+  .focus-visible-ring {
+    @apply focus-visible:ring-2 focus-visible:ring-offset-2;
+    --tw-ring-color: var(--mockmail-magenta);
+  }
+
+  /* Glassmorphism effect */
+  .glass {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .glass-dark {
+    background: rgba(26, 26, 46, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  /* Skeleton loading */
+  .skeleton {
+    @apply bg-gray-200 animate-pulse rounded;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }

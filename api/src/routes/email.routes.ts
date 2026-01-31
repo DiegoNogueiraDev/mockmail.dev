@@ -4,6 +4,9 @@ import {
   getLatestEmail,
   getLatestEmailBySubject,
   getEmailBoxesByUser,
+  listEmails,
+  getEmailById,
+  deleteEmail,
 } from "../controllers/mail.controller";
 import { authMiddleware } from "../middlewares/authMiddleware";
 import { validateEmailRequest } from "../middlewares/validateEmailRequest";
@@ -52,5 +55,47 @@ emailRouter.get(
   authMiddleware,
   getLatestEmailBySubject
 );
+
+/** @route GET /api/mail/emails
+ *  @desc Lista todos os emails do usuário autenticado
+ *  @access Private
+ */
+emailRouter.get("/emails", authMiddleware, async (req, res, next) => {
+  try {
+    logger.info("MAIL-ROUTE - GET /api/mail/emails - Listing emails");
+    await listEmails(req, res);
+  } catch (error) {
+    logger.error(`MAIL-ROUTE - GET /api/mail/emails - Error: ${(error as Error).message}`);
+    next(error);
+  }
+});
+
+/** @route GET /api/mail/emails/:id
+ *  @desc Retorna um email específico por ID
+ *  @access Private
+ */
+emailRouter.get("/emails/:id", authMiddleware, async (req, res, next) => {
+  try {
+    logger.info(`MAIL-ROUTE - GET /api/mail/emails/${req.params.id} - Getting email`);
+    await getEmailById(req, res);
+  } catch (error) {
+    logger.error(`MAIL-ROUTE - GET /api/mail/emails/:id - Error: ${(error as Error).message}`);
+    next(error);
+  }
+});
+
+/** @route DELETE /api/mail/emails/:id
+ *  @desc Deleta um email específico por ID
+ *  @access Private
+ */
+emailRouter.delete("/emails/:id", authMiddleware, async (req, res, next) => {
+  try {
+    logger.info(`MAIL-ROUTE - DELETE /api/mail/emails/${req.params.id} - Deleting email`);
+    await deleteEmail(req, res);
+  } catch (error) {
+    logger.error(`MAIL-ROUTE - DELETE /api/mail/emails/:id - Error: ${(error as Error).message}`);
+    next(error);
+  }
+});
 
 export default emailRouter;

@@ -21,6 +21,8 @@ export interface IUser extends Document {
   permissions: Permission[];
   isActive: boolean;
   lastLogin?: Date;
+  createdAt: Date;
+  updatedAt: Date;
   hasPermission(permission: Permission): boolean;
   hasRole(...roles: UserRole[]): boolean;
 }

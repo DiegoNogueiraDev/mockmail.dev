@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { login, register } from "../controllers/auth.controller";
+import { login, register, me, refresh, logout } from "../controllers/auth.controller";
 import { validateRequest } from "../middlewares/validateRequest";
 import { authLimiter } from "../middlewares/rateLimiter";
 import { authMiddleware } from "../middlewares/authMiddleware";
@@ -25,6 +25,20 @@ router.get("/verify", authMiddleware, (req, res) => {
       role: user?.role || 'user'
     }
   });
+});
+
+/** @route GET /auth/me
+ *  @desc Retorna o usuário autenticado (via httpOnly cookie ou Authorization header)
+ *  @access Private
+ */
+router.get("/me", async (req, res, next) => {
+  try {
+    logger.info(`ROUTE-AUTH - GET /auth/me - Buscando usuário`);
+    await me(req, res);
+  } catch (error) {
+    logger.error(`ROUTE-AUTH - GET /auth/me - Erro: ${(error as Error).message}`);
+    next(error);
+  }
 });
 
 /** @route POST /auth/login */
@@ -83,56 +97,34 @@ router.post(
 );
 
 /** @route POST /auth/refresh
- *  @desc Renova tokens usando refresh token
- *  @access Public (requer refresh token válido no body)
+ *  @desc Renova tokens usando refresh token (body ou httpOnly cookie)
+ *  @access Public (requer refresh token válido)
  */
-const refreshSchema = Joi.object({
-  refreshToken: Joi.string().required(),
-});
-
 router.post(
   "/refresh",
   authLimiter,
-  validateRequest(refreshSchema),
-  async (req, res) => {
+  async (req, res, next) => {
     try {
-      const { refreshToken } = req.body;
       logger.info(`ROUTE-AUTH - POST /auth/refresh - Tentativa de refresh`);
-
-      const tokens = await refreshTokens(refreshToken);
-
-      if (!tokens) {
-        logger.warn(`ROUTE-AUTH - POST /auth/refresh - Token inválido ou expirado`);
-        return res.status(401).json({ error: 'Invalid or expired refresh token' });
-      }
-
-      logger.info(`ROUTE-AUTH - POST /auth/refresh - Tokens renovados com sucesso`);
-      res.json(tokens);
+      await refresh(req, res);
     } catch (error) {
       logger.error(`ROUTE-AUTH - POST /auth/refresh - Erro: ${(error as Error).message}`);
-      res.status(500).json({ error: 'Internal server error' });
+      next(error);
     }
   }
 );
 
 /** @route POST /auth/logout
- *  @desc Invalida o token atual (adiciona à blacklist)
- *  @access Private
+ *  @desc Invalida o token atual e limpa cookies
+ *  @access Public (não requer autenticação para logout)
  */
-router.post("/logout", authMiddleware, async (req, res) => {
+router.post("/logout", async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.replace('Bearer ', '');
-
-    if (token) {
-      await blacklistToken(token);
-      logger.info(`ROUTE-AUTH - POST /auth/logout - Token invalidado`);
-    }
-
-    res.json({ message: 'Logged out successfully' });
+    logger.info(`ROUTE-AUTH - POST /auth/logout - Iniciando logout`);
+    await logout(req, res);
   } catch (error) {
     logger.error(`ROUTE-AUTH - POST /auth/logout - Erro: ${(error as Error).message}`);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 });
 

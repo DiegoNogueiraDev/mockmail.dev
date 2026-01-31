@@ -1,0 +1,325 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { api } from '@/lib/apiClient';
+import {
+  Inbox,
+  Plus,
+  Trash2,
+  RefreshCw,
+  AlertCircle,
+  Mail,
+  Copy,
+  Check,
+  Search,
+  Eraser,
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+
+interface EmailBox {
+  id: string;
+  address: string;
+  emailCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface BoxesResponse {
+  success: boolean;
+  data: EmailBox[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export default function BoxesPage() {
+  const [boxes, setBoxes] = useState<EmailBox[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [clearingId, setClearingId] = useState<string | null>(null);
+
+  const router = useRouter();
+
+  const fetchBoxes = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await api.get<BoxesResponse>(`/api/boxes?page=${page}&limit=10`);
+      if (response.success && response.data) {
+        setBoxes(response.data.data);
+        setTotalPages(response.data.pagination.totalPages);
+      }
+    } catch (err) {
+      console.error('Failed to fetch boxes:', err);
+      setError('Não foi possível carregar as caixas de email');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBoxes();
+  }, [page]);
+
+  const handleCopyAddress = async (address: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopiedId(id);
+      toast.success('Endereço copiado!');
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error('Erro ao copiar endereço');
+    }
+  };
+
+  const handleDelete = async (id: string, address: string) => {
+    if (!confirm(`Tem certeza que deseja excluir a caixa ${address}? Todos os emails serão perdidos.`)) {
+      return;
+    }
+
+    setDeletingId(id);
+    try {
+      const response = await api.delete(`/api/boxes/${id}`);
+      if (response.success) {
+        toast.success('Caixa excluída com sucesso');
+        fetchBoxes();
+      } else {
+        toast.error('Erro ao excluir caixa');
+      }
+    } catch {
+      toast.error('Erro ao excluir caixa');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleClear = async (id: string, address: string) => {
+    if (!confirm(`Tem certeza que deseja limpar todos os emails de ${address}?`)) {
+      return;
+    }
+
+    setClearingId(id);
+    try {
+      const response = await api.post(`/api/boxes/${id}/clear`);
+      if (response.success) {
+        toast.success('Emails limpos com sucesso');
+        fetchBoxes();
+      } else {
+        toast.error('Erro ao limpar emails');
+      }
+    } catch {
+      toast.error('Erro ao limpar emails');
+    } finally {
+      setClearingId(null);
+    }
+  };
+
+  const filteredBoxes = boxes.filter((box) =>
+    box.address.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6" data-testid="boxes-page">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900" data-testid="boxes-title">
+            Caixas de Email
+          </h1>
+          <p className="text-gray-600 mt-1">
+            Gerencie suas caixas de email temporário
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={fetchBoxes}
+            disabled={loading}
+            className="btn-secondary btn-sm flex items-center gap-2"
+            data-testid="refresh-boxes-button"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </button>
+          <Link
+            href="/admin/boxes/new"
+            className="btn-brand btn-sm flex items-center gap-2"
+            data-testid="new-box-button"
+          >
+            <Plus className="w-4 h-4" />
+            Nova Caixa
+          </Link>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Buscar por endereço..."
+          className="input-brand pl-12 w-full sm:w-96"
+          data-testid="search-boxes-input"
+        />
+      </div>
+
+      {/* Error Message */}
+      {error && (
+        <div
+          className="flex items-center gap-3 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700"
+          role="alert"
+          data-testid="boxes-error"
+        >
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Boxes List */}
+      <div className="card-brand" data-testid="boxes-list">
+        {loading ? (
+          <div className="p-8">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex gap-4 p-4 border-b border-gray-100 last:border-0">
+                <div className="w-12 h-12 skeleton rounded-xl" />
+                <div className="flex-1 space-y-2">
+                  <div className="w-64 h-5 skeleton" />
+                  <div className="w-32 h-4 skeleton" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredBoxes.length === 0 ? (
+          <div className="empty-state py-16">
+            <Inbox className="empty-state-icon" />
+            <p className="empty-state-title">
+              {searchTerm ? 'Nenhuma caixa encontrada' : 'Nenhuma caixa criada'}
+            </p>
+            <p className="empty-state-description">
+              {searchTerm
+                ? 'Tente buscar por outro termo'
+                : 'Crie sua primeira caixa de email temporário'}
+            </p>
+            {!searchTerm && (
+              <Link href="/admin/boxes/new" className="btn-brand mt-4">
+                <Plus className="w-4 h-4 mr-2" />
+                Criar Caixa
+              </Link>
+            )}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {filteredBoxes.map((box) => (
+              <div
+                key={box.id}
+                className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors"
+                data-testid={`box-item-${box.id}`}
+              >
+                {/* Icon */}
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#e2498a] to-[#5636d1] flex items-center justify-center flex-shrink-0">
+                  <Inbox className="w-6 h-6 text-white" />
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/admin/boxes/${box.id}`}
+                      className="text-sm font-medium text-gray-900 hover:text-[#5636d1] truncate"
+                      data-testid={`box-address-${box.id}`}
+                    >
+                      {box.address}
+                    </Link>
+                    <button
+                      onClick={() => handleCopyAddress(box.address, box.id)}
+                      className="p-1 rounded hover:bg-gray-200 transition-colors"
+                      title="Copiar endereço"
+                      data-testid={`copy-address-${box.id}`}
+                    >
+                      {copiedId === box.id ? (
+                        <Check className="w-4 h-4 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-gray-400" />
+                      )}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="flex items-center gap-1 text-sm text-gray-500">
+                      <Mail className="w-4 h-4" />
+                      {box.emailCount} {box.emailCount === 1 ? 'email' : 'emails'}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      Criada em{' '}
+                      {new Date(box.createdAt).toLocaleDateString('pt-BR', {
+                        dateStyle: 'short',
+                      })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleClear(box.id, box.address)}
+                    disabled={clearingId === box.id || box.emailCount === 0}
+                    className="btn-secondary btn-sm flex items-center gap-1 disabled:opacity-50"
+                    title="Limpar emails"
+                    data-testid={`clear-box-${box.id}`}
+                  >
+                    <Eraser className={`w-4 h-4 ${clearingId === box.id ? 'animate-pulse' : ''}`} />
+                    <span className="hidden sm:inline">Limpar</span>
+                  </button>
+                  <button
+                    onClick={() => handleDelete(box.id, box.address)}
+                    disabled={deletingId === box.id}
+                    className="btn-secondary btn-sm flex items-center gap-1 text-red-600 hover:bg-red-50 hover:border-red-200 disabled:opacity-50"
+                    title="Excluir caixa"
+                    data-testid={`delete-box-${box.id}`}
+                  >
+                    <Trash2 className={`w-4 h-4 ${deletingId === box.id ? 'animate-pulse' : ''}`} />
+                    <span className="hidden sm:inline">Excluir</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2" data-testid="boxes-pagination">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="btn-secondary btn-sm disabled:opacity-50"
+          >
+            Anterior
+          </button>
+          <span className="text-sm text-gray-600">
+            Página {page} de {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+            className="btn-secondary btn-sm disabled:opacity-50"
+          >
+            Próxima
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
