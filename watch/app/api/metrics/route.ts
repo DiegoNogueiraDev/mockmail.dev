@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
+import { readFile } from 'fs/promises';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
+
+const LOG_FILE = '/var/log/mockmail/email_processor.log';
 
 interface SystemMetrics {
   emailsProcessed: number;
@@ -36,53 +39,77 @@ interface PM2Process {
   };
 }
 
+// Sanitiza uma string para uso seguro (remove caracteres perigosos)
+function sanitizeForLog(input: string): string {
+  return input.replace(/[^\w\s\-:.]/g, '');
+}
+
+// Lê e processa logs de forma segura (sem shell injection)
 async function getEmailMetrics() {
   try {
+    let logContent: string;
+    try {
+      logContent = await readFile(LOG_FILE, 'utf-8');
+    } catch {
+      // Log file não existe em desenvolvimento
+      return {
+        totalProcessed: 0,
+        errorRate: 0,
+        emailsPerHour: 0,
+        emailsToday: 0,
+        errorsToday: 0,
+      };
+    }
+
+    const lines = logContent.split('\n');
+
     // Contar emails processados com sucesso (total)
-    const { stdout: successCount } = await execAsync(
-      'grep -c "E-mail processado com sucesso" /var/log/mockmail/email_processor.log || echo "0"'
-    );
-    
+    const totalSuccess = lines.filter(line =>
+      line.includes('E-mail processado com sucesso')
+    ).length;
+
     // Contar erros 400 (total)
-    const { stdout: errorCount } = await execAsync(
-      'grep -c "400 Client Error" /var/log/mockmail/email_processor.log || echo "0"'
-    );
-    
-    const totalSuccess = parseInt(successCount.trim()) || 0;
-    const totalErrors = parseInt(errorCount.trim()) || 0;
+    const totalErrors = lines.filter(line =>
+      line.includes('400 Client Error')
+    ).length;
+
     const totalEmails = totalSuccess + totalErrors;
-    
-    // Calcular taxa de erro
     const errorRate = totalEmails > 0 ? (totalErrors / totalEmails) * 100 : 0;
-    
+
     // Emails processados hoje
     const today = new Date().toISOString().substring(0, 10);
-    const { stdout: successToday } = await execAsync(
-      `grep "^${today}" /var/log/mockmail/email_processor.log | grep -c "E-mail processado com sucesso" || echo "0"`
-    );
-    const { stdout: errorsToday } = await execAsync(
-      `grep "^${today}" /var/log/mockmail/email_processor.log | grep -c "400 Client Error" || echo "0"`
-    );
-    
-    // Emails processados nas últimas 2 horas (mais realista que 1 hora)
+    const todayLines = lines.filter(line => line.startsWith(today));
+
+    const successToday = todayLines.filter(line =>
+      line.includes('E-mail processado com sucesso')
+    ).length;
+
+    const errorsToday = todayLines.filter(line =>
+      line.includes('400 Client Error')
+    ).length;
+
+    // Emails nas últimas 2 horas
     const twoHoursAgo = new Date();
     twoHoursAgo.setHours(twoHoursAgo.getHours() - 2);
     const startTime = twoHoursAgo.toISOString().substring(0, 13).replace('T', ' ');
-    
-    const { stdout: recentEmails } = await execAsync(
-      `awk '$0 >= "${startTime}" {print}' /var/log/mockmail/email_processor.log | grep -c "E-mail processado com sucesso" || echo "0"`
-    );
-    
-    // Calcular emails/hora baseado nas últimas 2 horas
-    const emailsLast2Hours = parseInt(recentEmails.trim()) || 0;
+
+    const recentLines = lines.filter(line => {
+      const lineTime = line.substring(0, 13).replace('T', ' ');
+      return lineTime >= startTime;
+    });
+
+    const emailsLast2Hours = recentLines.filter(line =>
+      line.includes('E-mail processado com sucesso')
+    ).length;
+
     const emailsPerHour = Math.round(emailsLast2Hours / 2);
-    
+
     return {
       totalProcessed: totalSuccess,
       errorRate: Math.round(errorRate * 10) / 10,
       emailsPerHour,
-      emailsToday: parseInt(successToday.trim()) || 0,
-      errorsToday: parseInt(errorsToday.trim()) || 0,
+      emailsToday: successToday,
+      errorsToday,
     };
   } catch (error) {
     console.error('Erro ao obter métricas de email:', error);
@@ -98,17 +125,18 @@ async function getEmailMetrics() {
 
 async function getPM2Status() {
   try {
+    // pm2 jlist é seguro pois não usa input do usuário
     const { stdout } = await execAsync('pm2 jlist');
     const processes = JSON.parse(stdout) as PM2Process[];
     const mockMailApi = processes.find((p) => p.name === 'mockmail-api');
-    
+
     if (mockMailApi) {
       const uptimeMs = mockMailApi.pm2_env.pm_uptime;
       const uptime = Date.now() - uptimeMs;
       const days = Math.floor(uptime / (1000 * 60 * 60 * 24));
       const hours = Math.floor((uptime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
-      
+
       return {
         status: mockMailApi.pm2_env.status,
         uptime: `${days}d ${hours}h ${minutes}m`,
@@ -117,7 +145,7 @@ async function getPM2Status() {
         restarts: mockMailApi.pm2_env.restart_time,
       };
     }
-    
+
     return null;
   } catch (error) {
     console.error('Erro ao obter status PM2:', error);
@@ -127,13 +155,15 @@ async function getPM2Status() {
 
 async function getSystemStatus() {
   try {
-    // Verificar se os serviços estão rodando
-    const { stdout: pm2Status } = await execAsync('pm2 list | grep mockmail-api | wc -l');
-    const { stdout: pythonStatus } = await execAsync('ps aux | grep email_processor.py | grep -v grep | wc -l');
-    
-    const pm2Running = parseInt(pm2Status.trim()) > 0;
-    const pythonRunning = parseInt(pythonStatus.trim()) > 0;
-    
+    // Comandos fixos sem input do usuário - seguros
+    const { stdout: pm2Status } = await execAsync('pm2 jlist');
+    const processes = JSON.parse(pm2Status) as PM2Process[];
+    const pm2Running = processes.some((p) => p.name === 'mockmail-api' && p.pm2_env.status === 'online');
+
+    // Verificar Python processor de forma segura
+    const { stdout: pythonStatus } = await execAsync('pgrep -f email_processor.py || echo "0"');
+    const pythonRunning = pythonStatus.trim() !== '0' && pythonStatus.trim() !== '';
+
     if (pm2Running && pythonRunning) {
       return 'online';
     } else if (pm2Running || pythonRunning) {
@@ -149,25 +179,25 @@ async function getSystemStatus() {
 
 async function getMongoDBStats() {
   try {
-    // Contar usuários e caixas de email
-    const { stdout: userCount } = await execAsync(
-      'mongo --quiet --eval "db.users.countDocuments({})" mockmail || echo "0"'
-    );
-    
-    const { stdout: emailBoxCount } = await execAsync(
-      'mongo --quiet --eval "db.emailboxes.countDocuments({})" mockmail || echo "0"'
-    );
-    
-    return {
-      users: parseInt(userCount.trim()) || 0,
-      emailBoxes: parseInt(emailBoxCount.trim()) || 0,
-    };
+    // Usar API HTTP ao invés de shell command para MongoDB
+    const apiUrl = process.env.API_URL || 'http://localhost:3000';
+    const response = await fetch(`${apiUrl}/api/mail/boxes-by-user`, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        users: data.summary?.totalUsers || 0,
+        emailBoxes: data.summary?.totalBoxes || 0,
+      };
+    }
+
+    return { users: 0, emailBoxes: 0 };
   } catch (error) {
     console.error('Erro ao obter stats do MongoDB:', error);
-    return {
-      users: 0,
-      emailBoxes: 0,
-    };
+    return { users: 0, emailBoxes: 0 };
   }
 }
 

@@ -3,8 +3,8 @@ import {
   findUserByEmail,
   createUser,
   comparePassword,
-  generateToken,
 } from "../services/user.service";
+import { generateTokenPair } from "../services/token.service";
 import logger from "../utils/logger";
 
 // Função auxiliar para sanitizar entrada
@@ -17,6 +17,45 @@ const sanitizeInput = (input: string): string => {
 const isValidEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
+};
+
+// Política de senha forte (NIST SP 800-63B + OWASP)
+const PASSWORD_POLICY = {
+  MIN_LENGTH: 12,
+  REQUIRE_UPPERCASE: true,
+  REQUIRE_LOWERCASE: true,
+  REQUIRE_NUMBER: true,
+  REQUIRE_SPECIAL: true,
+} as const;
+
+interface PasswordValidation {
+  isValid: boolean;
+  errors: string[];
+}
+
+const validatePassword = (password: string): PasswordValidation => {
+  const errors: string[] = [];
+
+  if (password.length < PASSWORD_POLICY.MIN_LENGTH) {
+    errors.push(`Password must be at least ${PASSWORD_POLICY.MIN_LENGTH} characters`);
+  }
+  if (PASSWORD_POLICY.REQUIRE_UPPERCASE && !/[A-Z]/.test(password)) {
+    errors.push('Password must contain at least one uppercase letter');
+  }
+  if (PASSWORD_POLICY.REQUIRE_LOWERCASE && !/[a-z]/.test(password)) {
+    errors.push('Password must contain at least one lowercase letter');
+  }
+  if (PASSWORD_POLICY.REQUIRE_NUMBER && !/[0-9]/.test(password)) {
+    errors.push('Password must contain at least one number');
+  }
+  if (PASSWORD_POLICY.REQUIRE_SPECIAL && !/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+    errors.push('Password must contain at least one special character');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
 };
 
 export const login = async (req: Request, res: Response) => {
@@ -55,10 +94,14 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // Gerando o token
-    const token = generateToken(user.id);
+    // Gerando par de tokens (access + refresh)
+    const tokens = await generateTokenPair(user.id);
     logger.info(`CONTROL-AUTH - Login bem-sucedido para o email: ${sanitizedEmail}`);
-    res.status(200).json({ token });
+    // Retorna compatível com versão antiga (token) + novos campos (accessToken, refreshToken)
+    res.status(200).json({
+      token: tokens.accessToken, // Backward compatibility
+      ...tokens,
+    });
   } catch (error) {
     logger.error(`CONTROL-AUTH - Erro no login para o email: ${sanitizedEmail}`);
     logger.error(`Detalhes do erro: ${(error as Error).message}`);
@@ -86,11 +129,13 @@ export const register = async (req: Request, res: Response) => {
     });
   }
 
-  if (password.length < 6) {
-    logger.warn(`CONTROL-AUTH - Registro falhou: Senha muito curta`);
-    return res.status(400).json({ 
+  // Validação de senha forte
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.isValid) {
+    logger.warn(`CONTROL-AUTH - Registro falhou: Senha não atende aos requisitos`);
+    return res.status(400).json({
       message: "Erro de validação",
-      details: ["Password must be at least 6 characters long"]
+      details: passwordValidation.errors
     });
   }
 

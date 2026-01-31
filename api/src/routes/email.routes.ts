@@ -30,9 +30,9 @@ emailRouter.post("/process", validateEmailRequest, async (req, res, next) => {
 
 /** @route GET /api/mail/boxes-by-user
  *  @desc Retorna estatísticas de caixas temporárias agrupadas por usuário
- *  @access Public (sem autenticação para dashboard)
+ *  @access Private (requer autenticação)
  */
-emailRouter.get("/boxes-by-user", async (req, res, next) => {
+emailRouter.get("/boxes-by-user", authMiddleware, async (req, res, next) => {
   try {
     logger.info(`MAIL-ROUTE - GET /api/mail/boxes-by-user - Iniciando requisição`);
     await getEmailBoxesByUser(req, res);
