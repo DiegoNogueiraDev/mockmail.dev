@@ -3,11 +3,12 @@ import logger from '../utils/logger';
 
 /**
  * Rate limiter para endpoints de autenticação
- * Limite: 5 requisições por 15 minutos por IP
+ * Limite: 20 requisições por 15 minutos por IP
+ * (Ajustado de 5 para 20 - permite uso normal sem bloqueios frequentes)
  */
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 5,
+  max: 20, // Aumentado de 5 para 20
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: false,

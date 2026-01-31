@@ -37,13 +37,16 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
       "font-src 'self'",
-      "connect-src 'self' http://localhost:3000",
+      "connect-src 'self' http://localhost:3000 https://api.mockmail.dev https://api.homologacao.mockmail.dev",
       "frame-ancestors 'none'",
     ].join('; ')
   }
 ];
 
 const nextConfig: NextConfig = {
+  // Habilitar output standalone para Docker
+  output: 'standalone',
+
   async headers() {
     return [
       {
