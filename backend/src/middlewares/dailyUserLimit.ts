@@ -2,8 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { getRedisClient } from '../config/redis';
 import logger from '../utils/logger';
 
-// Limite de requisições por dia por usuário
-const DAILY_REQUEST_LIMIT = 500;
+// Limite de interações por dia por usuário (requisições API + emails recebidos)
+const DAILY_INTERACTION_LIMIT = 200;
 
 // Interface para o request com user (compatível com authMiddleware)
 interface AuthenticatedRequest extends Request {
@@ -78,25 +78,25 @@ export function dailyUserLimitMiddleware(
       }
 
       // Calcula requisições restantes
-      const remaining = Math.max(0, DAILY_REQUEST_LIMIT - currentCount);
+      const remaining = Math.max(0, DAILY_INTERACTION_LIMIT - currentCount);
       const resetTime = new Date();
       resetTime.setUTCHours(24, 0, 0, 0);
 
       // Adiciona headers informativos
-      res.setHeader('X-RateLimit-Limit', DAILY_REQUEST_LIMIT.toString());
+      res.setHeader('X-RateLimit-Limit', DAILY_INTERACTION_LIMIT.toString());
       res.setHeader('X-RateLimit-Remaining', remaining.toString());
       res.setHeader('X-RateLimit-Reset', Math.floor(resetTime.getTime() / 1000).toString());
-      res.setHeader('X-RateLimit-Policy', `${DAILY_REQUEST_LIMIT};w=86400`);
+      res.setHeader('X-RateLimit-Policy', `${DAILY_INTERACTION_LIMIT};w=86400`);
 
       // Verifica se excedeu o limite
-      if (currentCount > DAILY_REQUEST_LIMIT) {
-        logger.warn(`DAILY-LIMIT - Usuário ${userId} excedeu limite diário: ${currentCount}/${DAILY_REQUEST_LIMIT}`);
+      if (currentCount > DAILY_INTERACTION_LIMIT) {
+        logger.warn(`DAILY-LIMIT - Usuário ${userId} excedeu limite diário: ${currentCount}/${DAILY_INTERACTION_LIMIT}`);
 
         res.status(429).json({
           success: false,
           error: 'Limite diário de requisições excedido',
-          message: `Você atingiu o limite de ${DAILY_REQUEST_LIMIT} requisições por dia. O limite será resetado à meia-noite UTC.`,
-          limit: DAILY_REQUEST_LIMIT,
+          message: `Você atingiu o limite de ${DAILY_INTERACTION_LIMIT} requisições por dia. O limite será resetado à meia-noite UTC.`,
+          limit: DAILY_INTERACTION_LIMIT,
           used: currentCount,
           remaining: 0,
           resetAt: resetTime.toISOString(),
@@ -106,7 +106,7 @@ export function dailyUserLimitMiddleware(
 
       // Log a cada 100 requisições para monitoramento
       if (currentCount % 100 === 0) {
-        logger.info(`DAILY-LIMIT - Usuário ${userId}: ${currentCount}/${DAILY_REQUEST_LIMIT} requisições hoje`);
+        logger.info(`DAILY-LIMIT - Usuário ${userId}: ${currentCount}/${DAILY_INTERACTION_LIMIT} requisições hoje`);
       }
 
       next();
@@ -141,15 +141,51 @@ export async function getUserDailyUsage(userId: string): Promise<{
 
   return {
     used,
-    limit: DAILY_REQUEST_LIMIT,
-    remaining: Math.max(0, DAILY_REQUEST_LIMIT - used),
+    limit: DAILY_INTERACTION_LIMIT,
+    remaining: Math.max(0, DAILY_INTERACTION_LIMIT - used),
     resetAt: resetTime.toISOString(),
   };
 }
 
 /**
+ * Incrementa o contador de uso diário de um usuário (para emails recebidos)
+ * Retorna true se ainda há quota disponível, false se excedeu o limite
+ */
+export async function incrementUserDailyUsage(userId: string): Promise<boolean> {
+  const redis = getRedisClient();
+  
+  if (!redis) {
+    logger.warn('DAILY-LIMIT - Redis não disponível, permitindo operação');
+    return true;
+  }
+
+  const key = getDailyLimitKey(userId);
+
+  try {
+    const currentCount = await redis.incr(key);
+    
+    // Se é a primeira interação do dia, define o TTL até meia-noite
+    if (currentCount === 1) {
+      const ttl = getSecondsUntilMidnight();
+      await redis.expire(key, ttl);
+    }
+
+    // Log a cada 50 interações para monitoramento
+    if (currentCount % 50 === 0) {
+      logger.info(`DAILY-LIMIT - Usuário ${userId}: ${currentCount}/${DAILY_INTERACTION_LIMIT} interações hoje (email)`);
+    }
+
+    // Retorna se ainda tem quota
+    return currentCount <= DAILY_INTERACTION_LIMIT;
+  } catch (error) {
+    logger.error(`DAILY-LIMIT - Erro ao incrementar uso: ${(error as Error).message}`);
+    return true; // fail-open
+  }
+}
+
+/**
  * Constante exportada para uso em outros lugares
  */
-export const DAILY_LIMIT = DAILY_REQUEST_LIMIT;
+export const DAILY_LIMIT = DAILY_INTERACTION_LIMIT;
 
 export default dailyUserLimitMiddleware;

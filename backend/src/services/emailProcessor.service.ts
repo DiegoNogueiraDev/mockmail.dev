@@ -7,6 +7,7 @@ import { findEmailBoxByAddress, findOrCreateEmailBox } from "./emailBox.service"
 import { extractEmail, extractTokenSubject } from "../utils/emailParser";
 import { parseBody } from "../utils/bodyParser";
 import User from "../models/User";
+import { incrementUserDailyUsage } from "../middlewares/dailyUserLimit";
 
 // Configurações via variáveis de ambiente
 const FIFO_PATH = process.env.MOCKMAIL_FIFO_PATH || "/var/spool/email-processor";
@@ -164,6 +165,16 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
     });
 
     logger.info(`EMAIL-PROCESSOR - Email persistido: ${savedEmail.id} para ${to}`);
+
+    // Incrementar contador de uso diário do usuário (conta como 1 interação)
+    try {
+      const hasQuota = await incrementUserDailyUsage(userId);
+      if (!hasQuota) {
+        logger.warn(`EMAIL-PROCESSOR - Usuário ${userId} excedeu limite diário de interações`);
+      }
+    } catch (usageError) {
+      logger.warn(`EMAIL-PROCESSOR - Falha ao incrementar uso diário: ${(usageError as Error).message}`);
+    }
 
     // Invalidar cache do usuário para refletir novo email
     try {

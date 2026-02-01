@@ -226,8 +226,8 @@ export default function DashboardPage() {
                 <Activity className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h3 className="text-sm font-medium text-gray-900">Uso da API Hoje</h3>
-                <p className="text-xs text-gray-500">Limite diário de requisições</p>
+                <h3 className="text-sm font-medium text-gray-900">Uso Diário</h3>
+                <p className="text-xs text-gray-500">Requisições API + emails recebidos</p>
               </div>
             </div>
             <div className="text-right">

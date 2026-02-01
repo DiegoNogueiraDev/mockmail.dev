@@ -34,8 +34,7 @@ interface Email {
   read: boolean;
 }
 
-interface EmailsResponse {
-  success: boolean;
+interface EmailsData {
   data: Email[];
   pagination: {
     page: number;
@@ -63,9 +62,9 @@ export default function BoxDetailPage() {
 
   const fetchBox = async () => {
     try {
-      const response = await api.get<{ success: boolean; data: EmailBox }>(`/api/boxes/${boxId}`);
+      const response = await api.get<EmailBox>(`/api/boxes/${boxId}`);
       if (response.success && response.data) {
-        setBox(response.data.data);
+        setBox(response.data);
       } else {
         setError('Caixa não encontrada');
       }
@@ -77,7 +76,7 @@ export default function BoxDetailPage() {
   const fetchEmails = async () => {
     setEmailsLoading(true);
     try {
-      const response = await api.get<EmailsResponse>(`/api/boxes/${boxId}/emails?page=${page}&limit=20`);
+      const response = await api.get<EmailsData>(`/api/boxes/${boxId}/emails?page=${page}&limit=20`);
       if (response.success && response.data) {
         setEmails(response.data.data);
         setTotalPages(response.data.pagination.totalPages);
