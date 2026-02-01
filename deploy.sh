@@ -197,6 +197,34 @@ setup_env_files() {
     if [ -f "$backend_env_template" ]; then
         cp "$backend_env_template" "$backend_env_target"
         log_success "Backend .env copiado de .env.$ENVIRONMENT"
+        
+        # Substituir placeholders pelas senhas reais
+        # Primeiro tenta ler do arquivo .env raiz (usado pelo Docker Compose)
+        local root_env="$PROJECT_ROOT/.env"
+        if [ -f "$root_env" ]; then
+            local mongo_pass=$(grep "^MONGO_PASSWORD=" "$root_env" | cut -d'=' -f2)
+            local redis_pass=$(grep "^REDIS_PASSWORD=" "$root_env" | cut -d'=' -f2)
+            
+            if [ -n "$mongo_pass" ]; then
+                sed -i "s/__MONGO_PASSWORD__/$mongo_pass/g" "$backend_env_target"
+                log_success "MONGO_PASSWORD substituído no .env"
+            else
+                log_warning "MONGO_PASSWORD não encontrado em .env raiz"
+                log_info "Edite manualmente: $backend_env_target"
+            fi
+            
+            if [ -n "$redis_pass" ]; then
+                sed -i "s/__REDIS_PASSWORD__/$redis_pass/g" "$backend_env_target"
+                log_success "REDIS_PASSWORD substituído no .env"
+            else
+                log_warning "REDIS_PASSWORD não encontrado em .env raiz"
+                log_info "Edite manualmente: $backend_env_target"
+            fi
+        else
+            log_warning "Arquivo .env raiz não encontrado"
+            log_info "Crie o arquivo $root_env com MONGO_PASSWORD e REDIS_PASSWORD"
+            log_info "Ou edite manualmente os placeholders em: $backend_env_target"
+        fi
     else
         if [ -f "$backend_env_target" ]; then
             log_warning "Template backend/.env.$ENVIRONMENT não encontrado, usando .env existente"
