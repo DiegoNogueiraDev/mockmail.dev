@@ -85,8 +85,13 @@ export default function DashboardPage() {
       if (emailsRes.success) {
         setRecentEmails(emailsRes.data ?? []);
       }
-      if (usageRes.success) {
-        setDailyUsage(usageRes.data ?? null);
+      // Usage response comes directly from backend (not wrapped in {success, data})
+      // Handle both wrapped and unwrapped formats
+      if (usageRes) {
+        const usage = (usageRes as any).data || usageRes;
+        if (usage && typeof usage.used === 'number') {
+          setDailyUsage(usage as DailyUsage);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
