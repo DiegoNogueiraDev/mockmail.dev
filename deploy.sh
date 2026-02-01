@@ -532,12 +532,31 @@ sync_server_configs() {
             # Validar config antes de aplicar
             if sudo haproxy -c -f "$CONFIG_DIR/haproxy/haproxy.cfg" &>/dev/null; then
                 sudo cp "$CONFIG_DIR/haproxy/haproxy.cfg" /etc/haproxy/haproxy.cfg
-                sudo systemctl reload haproxy 2>/dev/null && log_success "HAProxy atualizado e recarregado" || log_warning "Falha ao recarregar HAProxy"
+                CHANGES_MADE=true
             else
                 log_error "HAProxy config inválida! Não aplicando..."
             fi
         else
             log_info "HAProxy: sem alterações"
+        fi
+    fi
+
+    # Corrigir health check do frontend para aceitar redirects (301, 302, 307)
+    # Next.js retorna redirect em algumas rotas, o HAProxy precisa aceitar
+    if sudo grep -q "backend_frontend" /etc/haproxy/haproxy.cfg 2>/dev/null; then
+        if sudo grep -q "http-check expect status 200$" /etc/haproxy/haproxy.cfg 2>/dev/null; then
+            sudo sed -i 's/http-check expect status 200$/http-check expect status 200,301,302,307/' /etc/haproxy/haproxy.cfg
+            log_success "HAProxy: health check do frontend corrigido para aceitar redirects"
+            CHANGES_MADE=true
+        fi
+    fi
+
+    # Recarregar HAProxy se houve mudanças
+    if [ "$CHANGES_MADE" = true ]; then
+        if sudo haproxy -c -f /etc/haproxy/haproxy.cfg &>/dev/null; then
+            sudo systemctl reload haproxy 2>/dev/null && log_success "HAProxy recarregado" || log_warning "Falha ao recarregar HAProxy"
+        else
+            log_error "HAProxy config inválida após correções!"
         fi
     fi
 
