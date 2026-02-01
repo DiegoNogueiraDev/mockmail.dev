@@ -429,31 +429,269 @@ build_frontend() {
     log_success "Frontend compilado"
 }
 
-# Atualizar Email Processor
-update_email_processor() {
-    log_step "Atualizando Email Processor"
+# =============================================================================
+# FUNÇÕES DE CONFIGURAÇÃO DO SERVIDOR
+# =============================================================================
+
+# Setup completo do Email Processor (venv, deps, configs)
+setup_email_processor() {
+    log_step "Configurando Email Processor"
 
     if [ ! -d "$EMAIL_PROCESSOR_DIR" ]; then
         log_warning "Diretório email-processor não encontrado, pulando..."
         return 0
     fi
 
-    cd "$EMAIL_PROCESSOR_DIR"
-
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] Atualizando email processor..."
+        log_info "[DRY RUN] Configurando email processor..."
         return 0
     fi
 
+    local PROCESSOR_DEST="/opt/mockmail"
+    local PROCESSOR_ENV="$EMAIL_PROCESSOR_DIR/.env.$ENVIRONMENT"
+
+    # Criar diretório de destino se não existir
+    if [ ! -d "$PROCESSOR_DEST" ]; then
+        sudo mkdir -p "$PROCESSOR_DEST"
+        sudo chown email-processor:email-processor "$PROCESSOR_DEST" 2>/dev/null || true
+        log_info "Diretório $PROCESSOR_DEST criado"
+    fi
+
+    # Criar diretório de logs
+    sudo mkdir -p /var/log/mockmail
+    sudo chown email-processor:email-processor /var/log/mockmail 2>/dev/null || true
+
+    # Criar FIFO se não existir
+    if [ ! -p /var/spool/email-processor ]; then
+        sudo mkfifo /var/spool/email-processor 2>/dev/null || true
+        sudo chown email-processor:email-processor /var/spool/email-processor 2>/dev/null || true
+        log_info "FIFO criado em /var/spool/email-processor"
+    fi
+
+    # Copiar arquivos do processor
+    cd "$EMAIL_PROCESSOR_DIR"
+    
     if [ -f "email_processor.py" ]; then
-        sudo cp email_processor.py /opt/mockmail/ 2>/dev/null || log_warning "Não foi possível copiar email_processor.py"
-        log_success "Email processor atualizado"
+        sudo cp email_processor.py "$PROCESSOR_DEST/"
+        log_success "email_processor.py copiado"
+    fi
+
+    if [ -f "requirements.txt" ]; then
+        sudo cp requirements.txt "$PROCESSOR_DEST/"
+        log_success "requirements.txt copiado"
     fi
 
     if [ -f "email-handler.sh" ]; then
-        sudo cp email-handler.sh /usr/local/bin/ 2>/dev/null || log_warning "Não foi possível copiar email-handler.sh"
-        sudo chmod +x /usr/local/bin/email-handler.sh 2>/dev/null || true
-        log_success "Email handler atualizado"
+        sudo cp email-handler.sh /usr/local/bin/
+        sudo chmod +x /usr/local/bin/email-handler.sh
+        log_success "email-handler.sh instalado"
+    fi
+
+    # Copiar .env do ambiente
+    if [ -f "$PROCESSOR_ENV" ]; then
+        sudo cp "$PROCESSOR_ENV" "$PROCESSOR_DEST/.env"
+        log_success "Email processor .env copiado de .env.$ENVIRONMENT"
+    else
+        log_warning "Template email-processor/.env.$ENVIRONMENT não encontrado"
+    fi
+
+    # Criar/atualizar virtualenv e instalar dependências
+    if [ -f "$PROCESSOR_DEST/requirements.txt" ]; then
+        log_info "Configurando virtualenv Python..."
+        
+        # Criar venv se não existir
+        if [ ! -d "$PROCESSOR_DEST/venv" ]; then
+            sudo python3 -m venv "$PROCESSOR_DEST/venv"
+            log_info "Virtualenv criado"
+        fi
+
+        # Instalar/atualizar dependências
+        sudo "$PROCESSOR_DEST/venv/bin/pip" install --upgrade pip -q
+        sudo "$PROCESSOR_DEST/venv/bin/pip" install -r "$PROCESSOR_DEST/requirements.txt" -q
+        log_success "Dependências Python instaladas"
+    fi
+
+    # Ajustar permissões
+    sudo chown -R email-processor:email-processor "$PROCESSOR_DEST" 2>/dev/null || true
+}
+
+# Sincronizar configurações do servidor (Postfix, HAProxy, Systemd)
+sync_server_configs() {
+    log_step "Sincronizando configurações do servidor"
+
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Sincronizando configs..."
+        return 0
+    fi
+
+    local CONFIG_DIR="$PROJECT_ROOT/server-config"
+    local CHANGES_MADE=false
+
+    # Postfix configs
+    if [ -d "$CONFIG_DIR/postfix" ]; then
+        if [ -f "$CONFIG_DIR/postfix/main.cf" ]; then
+            if ! sudo diff -q "$CONFIG_DIR/postfix/main.cf" /etc/postfix/main.cf &>/dev/null; then
+                sudo cp "$CONFIG_DIR/postfix/main.cf" /etc/postfix/main.cf
+                log_success "Postfix main.cf atualizado"
+                CHANGES_MADE=true
+            else
+                log_info "Postfix main.cf: sem alterações"
+            fi
+        fi
+
+        if [ -f "$CONFIG_DIR/postfix/master.cf" ]; then
+            if ! sudo diff -q "$CONFIG_DIR/postfix/master.cf" /etc/postfix/master.cf &>/dev/null; then
+                sudo cp "$CONFIG_DIR/postfix/master.cf" /etc/postfix/master.cf
+                log_success "Postfix master.cf atualizado"
+                CHANGES_MADE=true
+            fi
+        fi
+
+        # Recarregar Postfix se houve mudanças
+        if [ "$CHANGES_MADE" = true ]; then
+            sudo systemctl reload postfix 2>/dev/null && log_success "Postfix recarregado" || log_warning "Falha ao recarregar Postfix"
+        fi
+    fi
+
+    # HAProxy config
+    CHANGES_MADE=false
+    if [ -f "$CONFIG_DIR/haproxy/haproxy.cfg" ]; then
+        if ! sudo diff -q "$CONFIG_DIR/haproxy/haproxy.cfg" /etc/haproxy/haproxy.cfg &>/dev/null; then
+            # Validar config antes de aplicar
+            if sudo haproxy -c -f "$CONFIG_DIR/haproxy/haproxy.cfg" &>/dev/null; then
+                sudo cp "$CONFIG_DIR/haproxy/haproxy.cfg" /etc/haproxy/haproxy.cfg
+                sudo systemctl reload haproxy 2>/dev/null && log_success "HAProxy atualizado e recarregado" || log_warning "Falha ao recarregar HAProxy"
+            else
+                log_error "HAProxy config inválida! Não aplicando..."
+            fi
+        else
+            log_info "HAProxy: sem alterações"
+        fi
+    fi
+
+    # Systemd services
+    if [ -d "$CONFIG_DIR/systemd" ]; then
+        for service_file in "$CONFIG_DIR/systemd"/*.service; do
+            if [ -f "$service_file" ]; then
+                local service_name=$(basename "$service_file")
+                if ! sudo diff -q "$service_file" "/etc/systemd/system/$service_name" &>/dev/null 2>&1; then
+                    sudo cp "$service_file" "/etc/systemd/system/$service_name"
+                    log_success "Systemd $service_name atualizado"
+                    CHANGES_MADE=true
+                fi
+            fi
+        done
+
+        if [ "$CHANGES_MADE" = true ]; then
+            sudo systemctl daemon-reload
+            log_success "Systemd daemon recarregado"
+        fi
+    fi
+}
+
+# Health check avançado com testes de conectividade
+enhanced_health_check() {
+    log_step "Verificação de saúde avançada"
+
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Health check..."
+        return 0
+    fi
+
+    sleep 5
+
+    local api_port="${API_PORTS[$ENVIRONMENT]}"
+    local frontend_port="${FRONTEND_PORTS[$ENVIRONMENT]}"
+    local ALL_OK=true
+    local WARNINGS=0
+
+    # 1. Verificar PM2
+    log_info "Verificando PM2..."
+    local env_suffix=""
+    [ "$ENVIRONMENT" = "homologacao" ] && env_suffix="-hml"
+    
+    local api_status=$(pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"mockmail-api${env_suffix}\") | .pm2_env.status" 2>/dev/null || echo "unknown")
+    local frontend_status=$(pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"mockmail-frontend${env_suffix}\") | .pm2_env.status" 2>/dev/null || echo "unknown")
+
+    if [ "$api_status" = "online" ]; then
+        log_success "PM2 API: online"
+    else
+        log_error "PM2 API: $api_status"
+        ALL_OK=false
+    fi
+
+    if [ "$frontend_status" = "online" ]; then
+        log_success "PM2 Frontend: online"
+    else
+        log_error "PM2 Frontend: $frontend_status"
+        ALL_OK=false
+    fi
+
+    # 2. Verificar API HTTP
+    log_info "Verificando endpoints..."
+    if curl -s -f "http://localhost:$api_port/api/health" > /dev/null 2>&1; then
+        log_success "API Health: OK (localhost:$api_port)"
+    elif curl -s -f "http://localhost:$api_port/api/csrf-token" > /dev/null 2>&1; then
+        log_success "API CSRF: OK (localhost:$api_port)"
+    else
+        log_error "API: Não responde (localhost:$api_port)"
+        ALL_OK=false
+    fi
+
+    # 3. Verificar Frontend
+    if curl -s -f "http://localhost:$frontend_port" > /dev/null 2>&1; then
+        log_success "Frontend: OK (localhost:$frontend_port)"
+    else
+        log_warning "Frontend: Não responde (pode estar iniciando...)"
+        ((WARNINGS++))
+    fi
+
+    # 4. Verificar MongoDB (via Docker)
+    log_info "Verificando databases..."
+    if docker exec mockmail-mongodb-1 mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1 || \
+       docker exec mockmail-hml-mongodb-1 mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1; then
+        log_success "MongoDB: Conectado"
+    else
+        log_warning "MongoDB: Não foi possível verificar conexão"
+        ((WARNINGS++))
+    fi
+
+    # 5. Verificar Redis (via Docker)
+    if docker exec mockmail-redis-1 redis-cli ping &>/dev/null 2>&1 || \
+       docker exec mockmail-hml-redis-1 redis-cli ping &>/dev/null 2>&1; then
+        log_success "Redis: Conectado"
+    else
+        log_warning "Redis: Não foi possível verificar conexão"
+        ((WARNINGS++))
+    fi
+
+    # 6. Verificar Email Processor
+    if sudo systemctl is-active --quiet email-processor 2>/dev/null; then
+        log_success "Email Processor: Ativo"
+    else
+        log_warning "Email Processor: Não está ativo"
+        ((WARNINGS++))
+    fi
+
+    # 7. Verificar Postfix
+    if sudo systemctl is-active --quiet postfix 2>/dev/null; then
+        log_success "Postfix: Ativo"
+    else
+        log_warning "Postfix: Não está ativo"
+        ((WARNINGS++))
+    fi
+
+    # Resumo
+    echo ""
+    if [ "$ALL_OK" = false ]; then
+        log_error "Alguns serviços críticos falharam! Verifique: pm2 logs"
+        return 1
+    elif [ "$WARNINGS" -gt 0 ]; then
+        log_warning "Deploy OK, mas $WARNINGS aviso(s). Verifique os serviços acima."
+        return 0
+    else
+        log_success "Todos os serviços estão saudáveis!"
+        return 0
     fi
 }
 
@@ -560,55 +798,6 @@ restart_email_processor() {
     fi
 }
 
-# Verificar saúde dos serviços
-health_check() {
-    log_step "Verificando saúde dos serviços"
-
-    if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] Verificação de saúde..."
-        return 0
-    fi
-
-    sleep 5
-
-    local api_port="${API_PORTS[$ENVIRONMENT]}"
-    local frontend_port="${FRONTEND_PORTS[$ENVIRONMENT]}"
-    local ALL_OK=true
-
-    # Verificar PM2
-    PM2_ONLINE=$(pm2 jlist 2>/dev/null | jq '[.[] | select(.pm2_env.status=="online")] | length' || echo "0")
-    PM2_TOTAL=$(pm2 jlist 2>/dev/null | jq 'length' || echo "0")
-
-    if [ "$PM2_ONLINE" -eq "$PM2_TOTAL" ] && [ "$PM2_TOTAL" -gt 0 ]; then
-        log_success "PM2: $PM2_ONLINE/$PM2_TOTAL online"
-    else
-        log_error "PM2: $PM2_ONLINE/$PM2_TOTAL online"
-        ALL_OK=false
-    fi
-
-    # Verificar API
-    if curl -s -f "http://localhost:$api_port/api/csrf-token" > /dev/null 2>&1; then
-        log_success "API: OK (localhost:$api_port)"
-    else
-        log_error "API: FALHOU (localhost:$api_port)"
-        ALL_OK=false
-    fi
-
-    # Verificar Frontend
-    if curl -s -f "http://localhost:$frontend_port" > /dev/null 2>&1; then
-        log_success "Frontend: OK (localhost:$frontend_port)"
-    else
-        log_warning "Frontend: Não responde (pode estar iniciando...)"
-    fi
-
-    if [ "$ALL_OK" = false ]; then
-        log_error "Alguns serviços falharam! Verifique: pm2 logs"
-        return 1
-    fi
-
-    return 0
-}
-
 # Exibir resumo
 show_summary() {
     separator
@@ -686,7 +875,8 @@ install_backend_deps
 build_backend
 install_frontend_deps
 build_frontend
-update_email_processor
+setup_email_processor
+sync_server_configs
 setup_ecosystem
 restart_services
 restart_email_processor
@@ -695,7 +885,7 @@ restart_email_processor
 log_info "Aguardando estabilização dos serviços..."
 sleep 5
 
-health_check || true
+enhanced_health_check || true
 
 show_summary
 

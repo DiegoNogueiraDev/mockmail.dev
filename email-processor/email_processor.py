@@ -15,17 +15,21 @@ import time
 from datetime import datetime
 import requests
 
-# Configurações
-FIFO_PATH = "/var/spool/email-processor"
-OUTPUT_FILE = "/var/log/mockmail/emails.json"
-LOG_FILE = "/var/log/mockmail/email_processor.log"
-POLL_TIMEOUT = 1000  # timeout em milissegundos
+# Configurações via variáveis de ambiente (com fallbacks)
+FIFO_PATH = os.getenv("MOCKMAIL_FIFO_PATH", "/var/spool/email-processor")
+OUTPUT_FILE = os.getenv("MOCKMAIL_OUTPUT_FILE", "/var/log/mockmail/emails.json")
+LOG_FILE = os.getenv("MOCKMAIL_LOG_FILE", "/var/log/mockmail/email_processor.log")
+POLL_TIMEOUT = int(os.getenv("MOCKMAIL_POLL_TIMEOUT", "1000"))  # timeout em milissegundos
 
-# Configurações de autenticação - CORRIGIDAS
-API_BASE_URL = "https://api.mockmail.dev"
-SYSTEM_EMAIL = "system@mockmail.dev"
-SYSTEM_PASSWORD = "MockMail@2025"
+# Configurações de autenticação via variáveis de ambiente
+API_BASE_URL = os.getenv("MOCKMAIL_API_URL", "https://api.mockmail.dev")
+SYSTEM_EMAIL = os.getenv("MOCKMAIL_SYSTEM_EMAIL", "system@mockmail.dev")
+SYSTEM_PASSWORD = os.getenv("MOCKMAIL_SYSTEM_PASSWORD")  # Obrigatório, sem fallback
 token_cache = {"token": None, "expires": 0}
+
+# Validação de variáveis obrigatórias
+if not SYSTEM_PASSWORD:
+    raise EnvironmentError("MOCKMAIL_SYSTEM_PASSWORD é obrigatório! Configure no arquivo .env ou variável de ambiente.")
 
 # Configuração do Logger com rotação de arquivos
 logging.basicConfig(
