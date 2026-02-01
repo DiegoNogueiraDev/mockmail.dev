@@ -1,31 +1,32 @@
 # =============================================================================
-# Docker Compose - MockMail.dev (Homologação)
+# Docker Compose - MockMail.dev (Homologação) - INFRAESTRUTURA
 # =============================================================================
 #
-# Ambiente de homologação com configurações isoladas
+# Apenas serviços de infraestrutura (bancos de dados)
+# API e Frontend são gerenciados via PM2 (./deploy.sh)
 #
-# URLs:
-#   Frontend: https://homologacao.mockmail.dev
-#   API:      https://api.homologacao.mockmail.dev
+# Portas Homologação (diferentes de produção):
+#   MongoDB:    27018
+#   Redis:      6380
+#   PostgreSQL: 5433
 #
 # Uso:
-#   docker compose -f docker-compose.homologacao.yml up -d
-#   docker compose -f docker-compose.homologacao.yml logs -f
-#   docker compose -f docker-compose.homologacao.yml down
+#   ./deploy-docker.sh --env=homologacao        # Subir infra
+#   ./deploy-docker.sh --env=homologacao --down # Parar infra
+#   ./deploy.sh --env=homologacao               # Subir API/Frontend via PM2
 #
 # =============================================================================
 
 services:
   # ===========================================================================
-  # DATABASES (Portas diferentes para não conflitar com produção)
+  # MongoDB
   # ===========================================================================
-
   mongodb-hml:
     image: mongo:7.0
     container_name: mockmail-mongodb-hml
     restart: unless-stopped
     ports:
-      - "27018:27017"  # Porta diferente de produção (27017)
+      - "27018:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-mockmail_hml_2026}
@@ -43,12 +44,15 @@ services:
     labels:
       - "environment=homologacao"
 
+  # ===========================================================================
+  # Redis
+  # ===========================================================================
   redis-hml:
     image: redis:7-alpine
     container_name: mockmail-redis-hml
     restart: unless-stopped
     ports:
-      - "6380:6379"  # Porta diferente de produção (6379)
+      - "6380:6379"
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-mockmail_hml_2026}
     volumes:
       - redis_hml_data:/data
@@ -62,12 +66,15 @@ services:
     labels:
       - "environment=homologacao"
 
+  # ===========================================================================
+  # PostgreSQL
+  # ===========================================================================
   postgres-hml:
     image: postgres:16-alpine
     container_name: mockmail-postgres-hml
     restart: unless-stopped
     ports:
-      - "5433:5432"  # Porta diferente de produção (5432)
+      - "5433:5432"
     environment:
       POSTGRES_USER: mockmail_hml
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mockmail_hml_2026}
@@ -84,106 +91,9 @@ services:
     labels:
       - "environment=homologacao"
 
-  # ===========================================================================
-  # API (Backend Node.js/Express)
-  # ===========================================================================
-
-  api-hml:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-      args:
-        - NODE_ENV=production
-    container_name: mockmail-api-hml
-    restart: unless-stopped
-    ports:
-      - "3010:3000"  # Porta diferente de produção (3000)
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      # MongoDB
-      MONGODB_URI: mongodb://admin:${MONGO_PASSWORD:-mockmail_hml_2026}@mongodb-hml:27017/mockmail_hml?authSource=admin
-      # Redis
-      REDIS_HOST: redis-hml
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-mockmail_hml_2026}
-      # PostgreSQL (Prisma)
-      DATABASE_URL: postgresql://mockmail_hml:${POSTGRES_PASSWORD:-mockmail_hml_2026}@postgres-hml:5432/mockmail_hml
-      # JWT
-      JWT_SECRET: ${JWT_SECRET:-sua_chave_secreta_hml_muito_segura_2026}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-sua_chave_refresh_hml_muito_segura_2026}
-      JWT_EXPIRES_IN: 15m
-      JWT_REFRESH_EXPIRES_IN: 7d
-      # CORS
-      CORS_ORIGIN: https://homologacao.mockmail.dev
-      # Outros
-      LOG_LEVEL: debug
-      ENVIRONMENT: homologacao
-    depends_on:
-      mongodb-hml:
-        condition: service_healthy
-      redis-hml:
-        condition: service_healthy
-      postgres-hml:
-        condition: service_healthy
-    networks:
-      - mockmail-hml-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/csrf-token"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    labels:
-      - "environment=homologacao"
-      - "traefik.enable=true"
-      - "traefik.http.routers.api-hml.rule=Host(`api.homologacao.mockmail.dev`)"
-      - "traefik.http.routers.api-hml.tls=true"
-      - "traefik.http.routers.api-hml.tls.certresolver=letsencrypt"
-      - "traefik.http.services.api-hml.loadbalancer.server.port=3000"
-
-  # ===========================================================================
-  # FRONTEND (Next.js Dashboard)
-  # ===========================================================================
-
-  watch-hml:
-    build:
-      context: ./watch
-      dockerfile: Dockerfile
-      args:
-        - NODE_ENV=production
-        - NEXT_PUBLIC_API_URL=https://api.homologacao.mockmail.dev
-    container_name: mockmail-watch-hml
-    restart: unless-stopped
-    ports:
-      - "3011:3001"  # Porta diferente de produção (3001)
-    environment:
-      NODE_ENV: production
-      PORT: 3001
-      NEXT_PUBLIC_API_URL: https://api.homologacao.mockmail.dev
-    depends_on:
-      api-hml:
-        condition: service_healthy
-    networks:
-      - mockmail-hml-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    labels:
-      - "environment=homologacao"
-      - "traefik.enable=true"
-      - "traefik.http.routers.watch-hml.rule=Host(`homologacao.mockmail.dev`)"
-      - "traefik.http.routers.watch-hml.tls=true"
-      - "traefik.http.routers.watch-hml.tls.certresolver=letsencrypt"
-      - "traefik.http.services.watch-hml.loadbalancer.server.port=3001"
-
 # =============================================================================
 # VOLUMES
 # =============================================================================
-
 volumes:
   mongodb_hml_data:
     name: mockmail_mongodb_hml_data
@@ -195,7 +105,6 @@ volumes:
 # =============================================================================
 # NETWORKS
 # =============================================================================
-
 networks:
   mockmail-hml-network:
     name: mockmail-hml-network

@@ -1,17 +1,19 @@
 # =============================================================================
-# Docker Compose - MockMail.dev (Produção)
+# Docker Compose - MockMail.dev (Produção) - INFRAESTRUTURA
 # =============================================================================
 #
-# Ambiente de produção com configurações otimizadas para performance e segurança
+# Apenas serviços de infraestrutura (bancos de dados)
+# API e Frontend são gerenciados via PM2 (./deploy.sh)
 #
-# URLs:
-#   Frontend: https://mockmail.dev
-#   API:      https://api.mockmail.dev
+# Portas Produção (localhost only para segurança):
+#   MongoDB:    27017
+#   Redis:      6379
+#   PostgreSQL: 5432
 #
 # Uso:
-#   docker compose -f docker-compose.producao.yml up -d
-#   docker compose -f docker-compose.producao.yml logs -f
-#   docker compose -f docker-compose.producao.yml down
+#   ./deploy-docker.sh --env=producao        # Subir infra
+#   ./deploy-docker.sh --env=producao --down # Parar infra
+#   ./deploy.sh --env=producao               # Subir API/Frontend via PM2
 #
 # IMPORTANTE: Configure o arquivo .env antes de iniciar!
 #
@@ -19,15 +21,14 @@
 
 services:
   # ===========================================================================
-  # DATABASES
+  # MongoDB
   # ===========================================================================
-
   mongodb:
     image: mongo:7.0
     container_name: mockmail-mongodb
     restart: always
     ports:
-      - "127.0.0.1:27017:27017"  # Apenas localhost em produção
+      - "127.0.0.1:27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD é obrigatório}
@@ -56,12 +57,15 @@ services:
     labels:
       - "environment=producao"
 
+  # ===========================================================================
+  # Redis
+  # ===========================================================================
   redis:
     image: redis:7-alpine
     container_name: mockmail-redis
     restart: always
     ports:
-      - "127.0.0.1:6379:6379"  # Apenas localhost em produção
+      - "127.0.0.1:6379:6379"
     command: >
       redis-server
       --appendonly yes
@@ -91,17 +95,19 @@ services:
     labels:
       - "environment=producao"
 
+  # ===========================================================================
+  # PostgreSQL
+  # ===========================================================================
   postgres:
     image: postgres:16-alpine
     container_name: mockmail-postgres
     restart: always
     ports:
-      - "127.0.0.1:5432:5432"  # Apenas localhost em produção
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: mockmail
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD é obrigatório}
       POSTGRES_DB: mockmail
-      # Otimizações de performance
       POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -126,153 +132,9 @@ services:
     labels:
       - "environment=producao"
 
-  # ===========================================================================
-  # API (Backend Node.js/Express)
-  # ===========================================================================
-
-  api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-      args:
-        - NODE_ENV=production
-    image: mockmail-api:${VERSION:-latest}
-    container_name: mockmail-api
-    restart: always
-    ports:
-      - "3000:3000"
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      # MongoDB
-      MONGODB_URI: mongodb://admin:${MONGO_PASSWORD}@mongodb:27017/mockmail?authSource=admin
-      # Redis
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      # PostgreSQL (Prisma)
-      DATABASE_URL: postgresql://mockmail:${POSTGRES_PASSWORD}@postgres:5432/mockmail
-      # JWT
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET é obrigatório}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET é obrigatório}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
-      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
-      # CSRF
-      CSRF_SECRET: ${CSRF_SECRET:?CSRF_SECRET é obrigatório}
-      # CORS
-      CORS_ORIGIN: https://mockmail.dev
-      ALLOWED_ORIGINS: https://mockmail.dev,https://api.mockmail.dev
-      # Cookie
-      COOKIE_DOMAIN: mockmail.dev
-      COOKIE_SECURE: "true"
-      COOKIE_SAME_SITE: strict
-      # Outros
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      ENVIRONMENT: producao
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    networks:
-      - mockmail-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/csrf-token"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
-    labels:
-      - "environment=producao"
-      - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=Host(`api.mockmail.dev`)"
-      - "traefik.http.routers.api.tls=true"
-      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
-      - "traefik.http.services.api.loadbalancer.server.port=3000"
-      # Headers de segurança
-      - "traefik.http.middlewares.api-headers.headers.stsSeconds=31536000"
-      - "traefik.http.middlewares.api-headers.headers.stsIncludeSubdomains=true"
-      - "traefik.http.routers.api.middlewares=api-headers"
-
-  # ===========================================================================
-  # FRONTEND (Next.js Dashboard)
-  # ===========================================================================
-
-  watch:
-    build:
-      context: ./watch
-      dockerfile: Dockerfile
-      args:
-        - NODE_ENV=production
-        - NEXT_PUBLIC_API_URL=https://api.mockmail.dev
-    image: mockmail-watch:${VERSION:-latest}
-    container_name: mockmail-watch
-    restart: always
-    ports:
-      - "3001:3001"
-    environment:
-      NODE_ENV: production
-      PORT: 3001
-      NEXT_PUBLIC_API_URL: https://api.mockmail.dev
-    depends_on:
-      api:
-        condition: service_healthy
-    networks:
-      - mockmail-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "5"
-    labels:
-      - "environment=producao"
-      - "traefik.enable=true"
-      - "traefik.http.routers.watch.rule=Host(`mockmail.dev`)"
-      - "traefik.http.routers.watch.tls=true"
-      - "traefik.http.routers.watch.tls.certresolver=letsencrypt"
-      - "traefik.http.services.watch.loadbalancer.server.port=3001"
-      # Headers de segurança
-      - "traefik.http.middlewares.watch-headers.headers.stsSeconds=31536000"
-      - "traefik.http.middlewares.watch-headers.headers.stsIncludeSubdomains=true"
-      - "traefik.http.routers.watch.middlewares=watch-headers"
-
 # =============================================================================
-# VOLUMES (Persistência de dados)
+# VOLUMES
 # =============================================================================
-
 volumes:
   mongodb_data:
     name: mockmail_mongodb_data
@@ -284,7 +146,6 @@ volumes:
 # =============================================================================
 # NETWORKS
 # =============================================================================
-
 networks:
   mockmail-network:
     name: mockmail-network
