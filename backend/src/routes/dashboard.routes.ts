@@ -23,12 +23,17 @@ router.get("/stats", async (req: Request, res: Response) => {
 
     logger.info(`ROUTE-DASHBOARD - GET /dashboard/stats - User: ${user?.email}`);
 
+    // First, get all user's email boxes
+    const userBoxes = await EmailBox.find({ userId }).select('_id').lean();
+    const boxIds = userBoxes.map(box => box._id);
+
     // Get counts for the user
     const [totalBoxes, totalEmails, emailsToday, activeWebhooks] = await Promise.all([
       EmailBox.countDocuments({ userId }),
-      Email.countDocuments({ userId }),
+      // Count emails by emailBox reference (Email model doesn't have userId field)
+      Email.countDocuments({ emailBox: { $in: boxIds } }),
       Email.countDocuments({
-        userId,
+        emailBox: { $in: boxIds },
         createdAt: {
           $gte: new Date(new Date().setHours(0, 0, 0, 0)),
         },
@@ -47,7 +52,7 @@ router.get("/stats", async (req: Request, res: Response) => {
         createdAt: { $lt: new Date(new Date().setHours(0, 0, 0, 0)) },
       }),
       Email.countDocuments({
-        userId,
+        emailBox: { $in: boxIds },
         createdAt: {
           $gte: yesterday,
           $lt: new Date(new Date().setHours(0, 0, 0, 0)),
@@ -63,13 +68,16 @@ router.get("/stats", async (req: Request, res: Response) => {
       : 0;
 
     res.json({
-      totalBoxes,
-      totalEmails,
-      emailsToday,
-      activeWebhooks,
-      percentChange: {
-        boxes: boxesChange,
-        emails: emailsChange,
+      success: true,
+      data: {
+        totalBoxes,
+        totalEmails,
+        emailsToday,
+        activeWebhooks,
+        percentChange: {
+          boxes: boxesChange,
+          emails: emailsChange,
+        },
       },
     });
   } catch (error) {
@@ -91,11 +99,15 @@ router.get("/recent-emails", async (req: Request, res: Response) => {
 
     logger.info(`ROUTE-DASHBOARD - GET /dashboard/recent-emails - User: ${user?.email}`);
 
-    // Get recent emails with box information
-    const recentEmails = await Email.find({ userId })
+    // First, get all user's email boxes
+    const userBoxes = await EmailBox.find({ userId }).select('_id address').lean();
+    const boxIds = userBoxes.map(box => box._id);
+
+    // Get recent emails for user's boxes
+    const recentEmails = await Email.find({ emailBox: { $in: boxIds } })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .populate('emailBoxId', 'address domain')
+      .populate('emailBox', 'address')
       .lean();
 
     const formattedEmails = recentEmails.map((email: any) => ({
@@ -103,12 +115,10 @@ router.get("/recent-emails", async (req: Request, res: Response) => {
       from: email.from || 'Unknown',
       subject: email.subject || '(No subject)',
       receivedAt: email.createdAt?.toISOString() || new Date().toISOString(),
-      boxAddress: email.emailBoxId 
-        ? `${email.emailBoxId.address}@${email.emailBoxId.domain}`
-        : 'Unknown box',
+      boxAddress: email.emailBox?.address || email.to || 'Unknown box',
     }));
 
-    res.json(formattedEmails);
+    res.json({ success: true, data: formattedEmails });
   } catch (error) {
     logger.error(`ROUTE-DASHBOARD - GET /dashboard/recent-emails - Error: ${(error as Error).message}`);
     res.status(500).json({ error: "Failed to fetch recent emails" });
@@ -135,8 +145,11 @@ router.get("/usage", async (req: Request, res: Response) => {
     const usage = await getUserDailyUsage(userId);
 
     res.json({
-      ...usage,
-      percentage: Math.round((usage.used / usage.limit) * 100),
+      success: true,
+      data: {
+        ...usage,
+        percentage: Math.round((usage.used / usage.limit) * 100),
+      },
     });
   } catch (error) {
     logger.error(`ROUTE-DASHBOARD - GET /dashboard/usage - Error: ${(error as Error).message}`);

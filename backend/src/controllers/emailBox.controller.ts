@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import EmailBox from "../models/EmailBox";
 import Email from "../models/Email";
 import logger from "../utils/logger";
-import crypto from "crypto";
 import {
   getFromCache,
   setInCache,
@@ -11,12 +10,30 @@ import {
   invalidateUserEmailsCache,
   CACHE_TTL,
 } from "../services/cache.service";
+import {
+  generateRandomAddress,
+  generateCustomAddress,
+  createEmailBoxForUser,
+} from "../services/emailBox.service";
 
-// Helper to generate random email addresses
-const generateRandomAddress = (domain: string = 'mockmail.dev'): string => {
-  const prefix = crypto.randomBytes(6).toString('hex');
-  return `${prefix}@${domain}`;
-};
+/**
+ * Formata o tempo restante em formato legível.
+ */
+function formatTimeLeft(seconds: number): string {
+  if (seconds <= 0) return "Expirada";
+  
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${secs}s`;
+  } else {
+    return `${secs}s`;
+  }
+}
 
 /**
  * List all email boxes for the authenticated user
@@ -42,35 +59,63 @@ export const listBoxes = async (req: Request, res: Response) => {
     }>(cacheKey);
 
     if (cached) {
+      // Recalcular timeLeft para dados cacheados (tempo é dinâmico)
+      const now = new Date();
+      cached.data = cached.data.map((box: any) => {
+        const expiresAt = new Date(box.expiresAt);
+        const timeLeftMs = Math.max(0, expiresAt.getTime() - now.getTime());
+        const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
+        return {
+          ...box,
+          timeLeftSeconds,
+          timeLeftFormatted: formatTimeLeft(timeLeftSeconds),
+        };
+      });
       logger.info(`CONTROL-EMAILBOX - Cache HIT for user ${userId} boxes (page ${page})`);
       return res.status(200).json({ success: true, ...cached });
     }
 
+    // Buscar apenas caixas não expiradas
     const [boxes, total] = await Promise.all([
-      EmailBox.find({ userId })
+      EmailBox.find({ 
+        userId,
+        expiresAt: { $gt: new Date() }, // Apenas não expiradas
+      })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      EmailBox.countDocuments({ userId }),
+      EmailBox.countDocuments({ 
+        userId,
+        expiresAt: { $gt: new Date() },
+      }),
     ]);
 
-    // Get email count for each box
-    const boxesWithCounts = await Promise.all(
-      boxes.map(async (box) => {
+    const now = new Date();
+
+    // Get email count for each box and calculate time left
+    const boxesWithDetails = await Promise.all(
+      boxes.map(async (box: any) => {
         const emailCount = await Email.countDocuments({ to: box.address });
+        const expiresAt = new Date(box.expiresAt);
+        const timeLeftMs = Math.max(0, expiresAt.getTime() - now.getTime());
+        const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
+        
         return {
           id: box._id,
           address: box.address,
+          isCustom: box.isCustom || false,
           emailCount,
           createdAt: box.createdAt,
-          updatedAt: box.updatedAt,
+          expiresAt: box.expiresAt,
+          timeLeftSeconds,
+          timeLeftFormatted: formatTimeLeft(timeLeftSeconds),
         };
       })
     );
 
     const responseData = {
-      data: boxesWithCounts,
+      data: boxesWithDetails,
       pagination: {
         page,
         limit,
@@ -79,8 +124,8 @@ export const listBoxes = async (req: Request, res: Response) => {
       },
     };
 
-    // Cache the result
-    await setInCache(cacheKey, responseData, CACHE_TTL.MEDIUM);
+    // Cache the result (short TTL because of time calculations)
+    await setInCache(cacheKey, responseData, CACHE_TTL.SHORT);
 
     logger.info(`CONTROL-EMAILBOX - Listed ${boxes.length} boxes for user ${userId}`);
     res.status(200).json({
@@ -114,15 +159,24 @@ export const getBox = async (req: Request, res: Response) => {
 
     const emailCount = await Email.countDocuments({ to: box.address });
 
+    // Calcular tempo restante
+    const now = new Date();
+    const expiresAt = new Date((box as any).expiresAt || now.getTime() + 24 * 60 * 60 * 1000);
+    const timeLeftMs = Math.max(0, expiresAt.getTime() - now.getTime());
+    const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
+
     logger.info(`CONTROL-EMAILBOX - Retrieved box ${id} for user ${userId}`);
     res.status(200).json({
       success: true,
       data: {
         id: box._id,
         address: box.address,
+        isCustom: (box as any).isCustom || false,
         emailCount,
         createdAt: box.createdAt,
-        updatedAt: box.updatedAt,
+        expiresAt: expiresAt,
+        timeLeftSeconds,
+        timeLeftFormatted: formatTimeLeft(timeLeftSeconds),
       },
     });
   } catch (error) {
@@ -143,30 +197,35 @@ export const createBox = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: "Not authenticated" });
     }
 
-    let { address, domain } = req.body;
+    const { customName } = req.body;
 
-    // If no address provided, generate a random one
-    if (!address) {
-      address = generateRandomAddress(domain || 'mockmail.dev');
-    } else {
-      // Ensure address has domain
-      if (!address.includes('@')) {
-        address = `${address}@${domain || 'mockmail.dev'}`;
+    // Gerar endereço: personalizado se customName fornecido, randômico senão
+    let address: string;
+    let isCustom = false;
+
+    try {
+      if (customName && typeof customName === 'string' && customName.trim()) {
+        address = await generateCustomAddress(customName.trim());
+        isCustom = true;
+      } else {
+        address = await generateRandomAddress();
       }
-    }
-
-    // Check if address already exists for this user
-    const existingBox = await EmailBox.findOne({ address, userId });
-    if (existingBox) {
-      return res.status(409).json({ 
+    } catch (genError) {
+      logger.error(`CONTROL-EMAILBOX - Error generating address: ${(genError as Error).message}`);
+      return res.status(400).json({ 
         success: false, 
-        message: "Email box with this address already exists" 
+        message: (genError as Error).message || "Erro ao gerar endereço" 
       });
     }
+
+    // Calcular expiração: 24 horas
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const box = new EmailBox({
       address,
       userId,
+      isCustom,
+      expiresAt,
     });
 
     await box.save();
@@ -174,19 +233,35 @@ export const createBox = async (req: Request, res: Response) => {
     // Invalidate user's boxes cache
     await invalidateUserBoxesCache(userId.toString());
 
-    logger.info(`CONTROL-EMAILBOX - Created box ${address} for user ${userId}`);
+    const now = new Date();
+    const timeLeftMs = expiresAt.getTime() - now.getTime();
+    const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
+
+    logger.info(`CONTROL-EMAILBOX - Created box ${address} for user ${userId} (expires: ${expiresAt.toISOString()})`);
     res.status(201).json({
       success: true,
       data: {
         id: box._id,
         address: box.address,
+        isCustom: box.isCustom,
         emailCount: 0,
         createdAt: box.createdAt,
-        updatedAt: box.updatedAt,
+        expiresAt: box.expiresAt,
+        timeLeftSeconds,
+        timeLeftFormatted: formatTimeLeft(timeLeftSeconds),
       },
     });
   } catch (error) {
     logger.error(`CONTROL-EMAILBOX - Error creating box: ${(error as Error).message}`);
+    
+    // Check for duplicate key error
+    if ((error as any).code === 11000) {
+      return res.status(409).json({ 
+        success: false, 
+        message: "Endereço já existe. Tente novamente." 
+      });
+    }
+    
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };

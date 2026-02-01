@@ -16,6 +16,7 @@ import {
   Activity,
 } from 'lucide-react';
 import Link from 'next/link';
+import RecentEmailsCard from '@/components/dashboard/RecentEmailsCard';
 
 interface DashboardStats {
   totalBoxes: number;
@@ -26,14 +27,6 @@ interface DashboardStats {
     boxes: number;
     emails: number;
   };
-}
-
-interface RecentEmail {
-  id: string;
-  from: string;
-  subject: string;
-  receivedAt: string;
-  boxAddress: string;
 }
 
 interface DailyUsage {
@@ -47,7 +40,6 @@ interface DailyUsage {
 export default function DashboardPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [recentEmails, setRecentEmails] = useState<RecentEmail[]>([]);
   const [dailyUsage, setDailyUsage] = useState<DailyUsage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +49,8 @@ export default function DashboardPage() {
     setError(null);
 
     try {
-      // Fetch stats, emails and usage
-      const [statsRes, emailsRes, usageRes] = await Promise.all([
+      // Fetch stats and usage (emails are lazy-loaded separately)
+      const [statsRes, usageRes] = await Promise.all([
         api.get<DashboardStats>('/api/dashboard/stats').catch(() => ({
           success: true,
           data: {
@@ -69,10 +61,6 @@ export default function DashboardPage() {
             percentChange: { boxes: 0, emails: 0 },
           },
         })),
-        api.get<RecentEmail[]>('/api/dashboard/recent-emails').catch(() => ({
-          success: true,
-          data: [],
-        })),
         api.get<DailyUsage>('/api/dashboard/usage').catch(() => ({
           success: true,
           data: { used: 0, limit: 500, remaining: 500, percentage: 0, resetAt: '' },
@@ -82,11 +70,7 @@ export default function DashboardPage() {
       if (statsRes.success) {
         setStats(statsRes.data ?? null);
       }
-      if (emailsRes.success) {
-        setRecentEmails(emailsRes.data ?? []);
-      }
-      // Usage response comes directly from backend (not wrapped in {success, data})
-      // Handle both wrapped and unwrapped formats
+      // Usage response - handle both wrapped and unwrapped formats
       if (usageRes) {
         const usageResponse = usageRes as unknown as { data?: DailyUsage } & DailyUsage;
         const usage = usageResponse.data || usageResponse;
@@ -309,74 +293,8 @@ export default function DashboardPage() {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Emails */}
-        <div className="lg:col-span-2 card-brand" data-testid="recent-emails-card">
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Emails Recentes</h2>
-              <Link
-                href="/admin/emails"
-                className="text-sm font-medium hover:underline"
-                style={{ color: 'var(--mockmail-purple)' }}
-              >
-                Ver todos
-              </Link>
-            </div>
-          </div>
-          <div className="divide-y divide-gray-100">
-            {loading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="p-4 flex gap-4">
-                  <div className="w-10 h-10 skeleton rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <div className="w-48 h-4 skeleton" />
-                    <div className="w-32 h-3 skeleton" />
-                  </div>
-                </div>
-              ))
-            ) : recentEmails.length === 0 ? (
-              <div className="empty-state py-12">
-                <Mail className="empty-state-icon" />
-                <p className="empty-state-title">Nenhum email ainda</p>
-                <p className="empty-state-description">
-                  Os emails recebidos aparecerão aqui
-                </p>
-              </div>
-            ) : (
-              recentEmails.slice(0, 5).map((email) => (
-                <Link
-                  key={email.id}
-                  href={`/admin/emails/${email.id}`}
-                  className="flex items-start gap-4 p-4 hover:bg-gray-50 transition-colors"
-                  data-testid={`email-item-${email.id}`}
-                >
-                  <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600">
-                    <Mail className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {email.subject || '(Sem assunto)'}
-                    </p>
-                    <p className="text-sm text-gray-500 truncate">
-                      De: {email.from}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="badge-brand-purple text-xs">
-                        {email.boxAddress}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        {new Date(email.receivedAt).toLocaleString('pt-BR', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              ))
-            )}
-          </div>
-        </div>
+        {/* Recent Emails - Lazy Loaded */}
+        <RecentEmailsCard limit={5} />
 
         {/* Quick Actions & Tips */}
         <div className="space-y-6">

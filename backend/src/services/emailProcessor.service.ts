@@ -96,35 +96,44 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
       return;
     }
 
-    // Busca o EmailBox pelo endereço de destino
+    // PRIORIDADE 1: Busca o EmailBox pelo endereço de destino (TO)
+    // Se a caixa TO existe, o email vai para ela independente do FROM
     let emailBox = await findEmailBoxByAddress(to);
     let userId: string;
 
-    if (!emailBox) {
-      // Caixa não existe - tentar criar automaticamente baseado no remetente (FROM)
-      logger.info(`EMAIL-PROCESSOR - EmailBox não encontrada para: ${to}. Tentando criar automaticamente...`);
-      
-      // Busca usuário pelo email do remetente
-      const senderUser = await User.findOne({ email: from });
-      
-      if (!senderUser) {
-        logger.warn(`EMAIL-PROCESSOR - Usuário remetente não cadastrado: ${from}. Email salvo em JSON.`);
-        await saveToJsonFile(emailData);
-        return;
-      }
-
-      // Cria a caixa automaticamente para o usuário remetente
-      logger.info(`EMAIL-PROCESSOR - Criando caixa ${to} automaticamente para usuário ${senderUser.email}`);
-      emailBox = await findOrCreateEmailBox(to, senderUser._id.toString());
-      userId = senderUser._id.toString();
-      
-      logger.info(`EMAIL-PROCESSOR - Caixa ${to} criada com sucesso!`);
-    } else {
-      // Caixa existe - usa o userId dela
+    if (emailBox) {
+      // Caixa TO existe - usa ela (ignora FROM)
       userId = (emailBox.userId as any)?._id?.toString() || emailBox.userId?.toString();
       
       if (!userId) {
         logger.warn(`EMAIL-PROCESSOR - Usuário não encontrado para EmailBox existente: ${to}`);
+        await saveToJsonFile(emailData);
+        return;
+      }
+      
+      logger.info(`EMAIL-PROCESSOR - Caixa ${to} encontrada. Destinando email para ela (FROM: ${from})`);
+    } else {
+      // PRIORIDADE 2: Caixa TO não existe - tentar criar baseado no remetente (FROM)
+      logger.info(`EMAIL-PROCESSOR - EmailBox não encontrada para: ${to}. Verificando remetente...`);
+      
+      // Busca usuário pelo email do remetente
+      const senderUser = await User.findOne({ email: from });
+      
+      if (senderUser) {
+        // FROM é usuário cadastrado - cria a caixa TO para ele
+        logger.info(`EMAIL-PROCESSOR - Criando caixa ${to} para usuário ${senderUser.email}`);
+        emailBox = await findOrCreateEmailBox(to, senderUser._id.toString());
+        userId = senderUser._id.toString();
+        logger.info(`EMAIL-PROCESSOR - Caixa ${to} criada com sucesso!`);
+      } else {
+        // PRIORIDADE 3: Nem TO nem FROM existem - descartar e logar detalhadamente
+        logger.warn(
+          `EMAIL-PROCESSOR - EMAIL DESCARTADO | ` +
+          `FROM: ${from} (não cadastrado) | ` +
+          `TO: ${to} (caixa inexistente) | ` +
+          `SUBJECT: ${emailData.subject} | ` +
+          `DATE: ${emailData.date}`
+        );
         await saveToJsonFile(emailData);
         return;
       }
@@ -155,6 +164,16 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
     });
 
     logger.info(`EMAIL-PROCESSOR - Email persistido: ${savedEmail.id} para ${to}`);
+
+    // Invalidar cache do usuário para refletir novo email
+    try {
+      const { invalidateUserEmailsCache, invalidateUserBoxesCache } = await import("./cache.service");
+      await invalidateUserEmailsCache(userId);
+      await invalidateUserBoxesCache(userId);
+      logger.debug(`EMAIL-PROCESSOR - Cache invalidado para usuário ${userId}`);
+    } catch (cacheError) {
+      logger.warn(`EMAIL-PROCESSOR - Falha ao invalidar cache: ${(cacheError as Error).message}`);
+    }
 
     // Salva cópia em JSON para backup
     if (DEBUG_MODE) {

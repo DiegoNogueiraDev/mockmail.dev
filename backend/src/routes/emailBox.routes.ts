@@ -52,6 +52,7 @@ router.get("/:id", async (req, res, next) => {
 const createBoxSchema = Joi.object({
   address: Joi.string().email().optional(),
   domain: Joi.string().optional().default('mockmail.dev'),
+  customName: Joi.string().max(20).pattern(/^[a-zA-Z0-9._-]+$/).optional(),
 });
 
 router.post(

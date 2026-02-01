@@ -169,7 +169,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           role="banner"
           aria-label="Barra de navegação superior"
         >
-          <div className="flex items-center justify-between h-full px-4 lg:px-6">
+          <div className="flex items-center h-full px-4 lg:px-6">
             {/* Mobile menu button */}
             <button
               onClick={() => setSidebarOpen(true)}
@@ -180,11 +180,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <Menu className="w-6 h-6 text-gray-600" />
             </button>
 
-            {/* Page title placeholder */}
-            <div className="lg:hidden" />
-
-            {/* Right side */}
-            <div className="flex items-center gap-4">
+            {/* Right side - pushed to right edge */}
+            <div className="flex items-center gap-4 ml-auto">
               {/* User menu */}
               <div className="relative">
                 <button
@@ -209,14 +206,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 {/* Dropdown menu */}
                 {userMenuOpen && (
                   <div
-                    className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-50"
+                    className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-50 min-w-max"
                     role="menu"
                     data-testid="user-menu-dropdown"
+                    style={{ maxWidth: 'calc(100vw - 2rem)' }}
                   >
                     <Link
                       href="/admin/profile"
-                      className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
                       role="menuitem"
+                      data-testid="menu-profile-link"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       <User className="w-4 h-4" />
@@ -224,8 +223,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     </Link>
                     <Link
                       href="/admin/settings"
-                      className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
                       role="menuitem"
+                      data-testid="menu-settings-link"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       <Settings className="w-4 h-4" />

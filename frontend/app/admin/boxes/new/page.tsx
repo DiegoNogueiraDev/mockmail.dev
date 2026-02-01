@@ -4,7 +4,7 @@ import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/apiClient';
-import { Inbox, ArrowLeft, Shuffle, AtSign, AlertCircle } from 'lucide-react';
+import { Inbox, ArrowLeft, Shuffle, AtSign, AlertCircle, Clock, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function NewBoxPage() {
@@ -22,9 +22,10 @@ export default function NewBoxPage() {
     setIsLoading(true);
 
     try {
-      const payload = useCustomAddress
-        ? { address: address.includes('@') ? address : `${address}@${domain}` }
-        : { domain };
+      // Se personalizado, envia customName; senão, envia vazio para gerar randômico
+      const payload = useCustomAddress && address.trim()
+        ? { customName: address.trim() }
+        : {};
 
       const response = await api.post('/api/boxes', payload);
 
@@ -166,7 +167,9 @@ export default function NewBoxPage() {
               </button>
             </div>
             <p className="text-xs text-gray-500">
-              O endereço final será: <span className="font-mono">{address || 'nome'}@{domain}</span>
+              O endereço final será: <span className="font-mono">{address || 'nome'}_xxxx@{domain}</span>
+              <br />
+              <span className="text-gray-400">(um sufixo único será adicionado para garantir exclusividade)</span>
             </p>
           </div>
         )}
@@ -176,12 +179,28 @@ export default function NewBoxPage() {
           <h3 className="text-sm font-medium text-[#5636d1] mb-2">
             Como funciona?
           </h3>
-          <ul className="text-sm text-gray-600 space-y-1">
-            <li>• A caixa será criada instantaneamente</li>
-            <li>• Todos os emails enviados para este endereço serão recebidos</li>
-            <li>• Você pode visualizar, copiar links e limpar emails a qualquer momento</li>
-            <li>• Os emails são armazenados temporariamente (30 dias por padrão)</li>
+          <ul className="text-sm text-gray-600 space-y-1.5">
+            <li className="flex items-start gap-2">
+              <Inbox className="w-4 h-4 text-[#5636d1] mt-0.5 flex-shrink-0" />
+              <span>A caixa será criada instantaneamente com endereço único</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Clock className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
+              <span><strong>Duração: 24 horas</strong> - após esse período, a caixa e todos os emails serão deletados automaticamente</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Sparkles className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
+              <span>Endereços personalizados recebem um sufixo único para garantir exclusividade</span>
+            </li>
           </ul>
+        </div>
+
+        {/* Expiration Warning */}
+        <div className="flex items-center gap-3 p-3 rounded-lg bg-orange-50 border border-orange-200">
+          <Clock className="w-5 h-5 text-orange-500 flex-shrink-0" />
+          <p className="text-sm text-orange-700">
+            <strong>Importante:</strong> Esta caixa expirará em 24 horas. Um timer animado mostrará o tempo restante.
+          </p>
         </div>
 
         {/* Submit Button */}

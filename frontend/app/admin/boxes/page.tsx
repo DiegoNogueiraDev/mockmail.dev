@@ -15,14 +15,20 @@ import {
   Check,
   Search,
   Eraser,
+  Sparkles,
 } from 'lucide-react';
+import { ExpirationTimer, CircularExpirationTimer } from '@/components/ExpirationTimer';
 import toast from 'react-hot-toast';
 
 interface EmailBox {
   id: string;
   address: string;
   emailCount: number;
+  isCustom?: boolean;
   createdAt: string;
+  expiresAt?: string;
+  timeLeftSeconds?: number;
+  timeLeftFormatted?: string;
   updatedAt: string;
 }
 
@@ -268,14 +274,25 @@ export default function BoxesPage() {
                 className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors"
                 data-testid={`box-item-${box.id}`}
               >
-                {/* Icon */}
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#e2498a] to-[#5636d1] flex items-center justify-center flex-shrink-0">
-                  <Inbox className="w-6 h-6 text-white" />
+                {/* Timer Circular */}
+                <div className="flex-shrink-0">
+                  {box.expiresAt ? (
+                    <CircularExpirationTimer
+                      expiresAt={box.expiresAt}
+                      size={48}
+                      strokeWidth={4}
+                      onExpired={() => fetchBoxes()}
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#e2498a] to-[#5636d1] flex items-center justify-center">
+                      <Inbox className="w-6 h-6 text-white" />
+                    </div>
+                  )}
                 </div>
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Link
                       href={`/admin/boxes/${box.id}`}
                       className="text-sm font-medium text-gray-900 hover:text-[#5636d1] truncate"
@@ -295,12 +312,25 @@ export default function BoxesPage() {
                         <Copy className="w-4 h-4 text-gray-400" />
                       )}
                     </button>
+                    {box.isCustom && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                        <Sparkles className="w-3 h-3" />
+                        Personalizada
+                      </span>
+                    )}
                   </div>
-                  <div className="flex items-center gap-3 mt-1">
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
                     <span className="flex items-center gap-1 text-sm text-gray-500">
                       <Mail className="w-4 h-4" />
                       {box.emailCount} {box.emailCount === 1 ? 'email' : 'emails'}
                     </span>
+                    {box.expiresAt && (
+                      <ExpirationTimer
+                        expiresAt={box.expiresAt}
+                        size="sm"
+                        showProgress={false}
+                      />
+                    )}
                     <span className="text-xs text-gray-400">
                       Criada em{' '}
                       {new Date(box.createdAt).toLocaleDateString('pt-BR', {
