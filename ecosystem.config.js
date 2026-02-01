@@ -1,42 +1,32 @@
-// =============================================================================
-// PM2 Ecosystem Config - MockMail.dev
-// =============================================================================
-// Este arquivo é gerado automaticamente pelo deploy.sh
-// Para personalizar, edite o deploy.sh
-// =============================================================================
-
 module.exports = {
   apps: [
     {
-      name: 'mockmail-api',
+      name: 'mockmail-api-hml',
       cwd: './backend',
       script: 'dist/server.js',
+      interpreter: '/home/anaopcd/.nvm/versions/node/v24.13.0/bin/node',
       instances: 1,
-      exec_mode: 'fork',
       autorestart: true,
       watch: false,
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'production',
-        PORT: 3000
-      },
-      time: true
+        PORT: 3010
+      }
     },
     {
-      name: 'mockmail-frontend',
+      name: 'mockmail-frontend-hml',
       cwd: './frontend',
       script: 'node_modules/.bin/next',
-      args: 'start -p 3001',
+      args: 'start -p 3011',
       instances: 1,
-      exec_mode: 'fork',
       autorestart: true,
       watch: false,
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'production',
-        PORT: 3001
-      },
-      time: true
+        PORT: 3011
+      }
     }
   ]
 };
