@@ -69,22 +69,32 @@ const checkMongoDBHealth = async (): Promise<ServiceStatus> => {
 
 const checkMemoryHealth = (): MemoryStatus => {
   const usage = process.memoryUsage();
-  const totalMemory = usage.heapTotal;
-  const usedMemory = usage.heapUsed;
-  const percentage = Math.round((usedMemory / totalMemory) * 100);
+  
+  // Usar RSS (Resident Set Size) que é mais estável que heapUsed/heapTotal
+  // RSS representa a memória física real usada pelo processo
+  const rssMemory = usage.rss;
+  
+  // Limite configurável via env (default: 512MB para corresponder ao --max-old-space-size)
+  const memoryLimitMB = parseInt(process.env.MEMORY_LIMIT_MB || '512', 10);
+  const memoryLimitBytes = memoryLimitMB * 1024 * 1024;
+  
+  const percentage = Math.round((rssMemory / memoryLimitBytes) * 100);
   
   let status: 'ok' | 'warning' | 'critical' = 'ok';
-  if (percentage > 90) {
+  
+  // Thresholds mais relaxados para evitar falsos positivos
+  // 85% warning, 95% critical
+  if (percentage > 95) {
     status = 'critical';
-  } else if (percentage > 75) {
+  } else if (percentage > 85) {
     status = 'warning';
   }
   
   return {
     status,
-    used: `${Math.round(usedMemory / 1024 / 1024)}MB`,
-    total: `${Math.round(totalMemory / 1024 / 1024)}MB`,
-    percentage
+    used: `${Math.round(rssMemory / 1024 / 1024)}MB`,
+    total: `${memoryLimitMB}MB`,
+    percentage: Math.min(percentage, 100) // Cap at 100% for display
   };
 };
 
