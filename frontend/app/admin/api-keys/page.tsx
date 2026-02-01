@@ -70,9 +70,11 @@ export default function ApiKeysPage() {
 
     try {
       const response = await api.get<ApiKeysData>(`/api/api-keys?page=${page}&limit=10`);
-      if (response.success && response.data) {
-        setApiKeys(response.data.data || []);
-        setTotalPages(response.data.pagination?.totalPages || 1);
+      if (response.success) {
+        // A API retorna { success, data: [...], pagination: {...} } diretamente
+        const apiResponse = response as unknown as { success: boolean; data: ApiKeyItem[]; pagination: { totalPages: number } };
+        setApiKeys(apiResponse.data || []);
+        setTotalPages(apiResponse.pagination?.totalPages || 1);
       }
     } catch {
       setError('Não foi possível carregar as API keys');

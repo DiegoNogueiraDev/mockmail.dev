@@ -73,11 +73,18 @@ export default function NewApiKeyPage() {
         }
       );
 
-      if (response.success && response.data) {
-        setCreatedKey(response.data.data.rawKey);
-        toast.success('API key criada com sucesso!');
+      if (response.success) {
+        // A API retorna { success: true, data: { rawKey: '...' } } diretamente
+        const apiResponse = response as unknown as { success: boolean; data: { rawKey: string }; error?: string };
+        if (apiResponse.data?.rawKey) {
+          setCreatedKey(apiResponse.data.rawKey);
+          toast.success('API key criada com sucesso!');
+        } else {
+          setError('API key criada, mas chave não foi retornada');
+        }
       } else {
-        setError(response.data?.error || 'Erro ao criar API key');
+        const apiResponse = response as unknown as { success: boolean; error?: string };
+        setError(apiResponse.error || 'Erro ao criar API key');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao criar API key');

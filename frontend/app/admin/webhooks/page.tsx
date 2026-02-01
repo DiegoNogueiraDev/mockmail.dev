@@ -86,9 +86,11 @@ export default function WebhooksPage() {
 
     try {
       const response = await api.get<WebhooksData>(`/api/webhooks?page=${page}&limit=10`);
-      if (response.success && response.data) {
-        setWebhooks(response.data.data || []);
-        setTotalPages(response.data.pagination?.totalPages || 1);
+      if (response.success) {
+        // A API retorna { success, data: [...], pagination: {...} } diretamente
+        const apiResponse = response as unknown as { success: boolean; data: WebhookItem[]; pagination: { totalPages: number } };
+        setWebhooks(apiResponse.data || []);
+        setTotalPages(apiResponse.pagination?.totalPages || 1);
       }
     } catch (err) {
       console.error('Failed to fetch webhooks:', err);
