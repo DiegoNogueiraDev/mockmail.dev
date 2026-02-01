@@ -4,6 +4,7 @@ import EmailBox from "../models/EmailBox";
 import Email from "../models/Email";
 import Webhook from "../models/Webhook";
 import logger from "../utils/logger";
+import { getUserDailyUsage, DAILY_LIMIT } from "../middlewares/dailyUserLimit";
 
 const router = Router();
 
@@ -111,6 +112,35 @@ router.get("/recent-emails", async (req: Request, res: Response) => {
   } catch (error) {
     logger.error(`ROUTE-DASHBOARD - GET /dashboard/recent-emails - Error: ${(error as Error).message}`);
     res.status(500).json({ error: "Failed to fetch recent emails" });
+  }
+});
+
+/**
+ * @route GET /dashboard/usage
+ * @desc Get daily API usage for the authenticated user
+ * @access Private
+ */
+router.get("/usage", async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userId = user?._id?.toString() || user?.id;
+
+    logger.info(`ROUTE-DASHBOARD - GET /dashboard/usage - User: ${user?.email}`);
+
+    if (!userId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    const usage = await getUserDailyUsage(userId);
+
+    res.json({
+      ...usage,
+      percentage: Math.round((usage.used / usage.limit) * 100),
+    });
+  } catch (error) {
+    logger.error(`ROUTE-DASHBOARD - GET /dashboard/usage - Error: ${(error as Error).message}`);
+    res.status(500).json({ error: "Failed to fetch usage stats" });
   }
 });
 

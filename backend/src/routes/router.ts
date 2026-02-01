@@ -9,8 +9,14 @@ import apiKeyRoutes from "./apiKey.routes";
 import profileRoutes from "./profile.routes";
 import { csrfTokenHandler, csrfProtection } from "../middlewares/csrfMiddleware";
 import dashboardRoutes from "./dashboard.routes";
+import { dailyUserLimitMiddleware } from "../middlewares/dailyUserLimit";
 
 const router = Router();
+
+// Aplica limite diário de 500 requisições por usuário em todas as rotas
+// (exceto auth que precisa funcionar antes do login)
+router.use(dailyUserLimitMiddleware);
+logger.info("ROUTE-ROUTER - Middleware de limite diário (500 req/dia) configurado");
 
 // CSRF Token endpoint (must be before CSRF protection)
 router.get("/csrf-token", csrfTokenHandler);
