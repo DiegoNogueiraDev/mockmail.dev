@@ -16,7 +16,6 @@ import {
   ChevronRight,
   ArrowLeft,
   Zap,
-  Clock,
   AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
