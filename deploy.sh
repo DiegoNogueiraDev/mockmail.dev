@@ -3,7 +3,7 @@
 # DEPLOY PM2 - MockMail.dev
 # =============================================================================
 # Deploy de API e Frontend via PM2
-# Infraestrutura (MongoDB, Redis, PostgreSQL) via Docker (./deploy-docker.sh)
+# Infraestrutura (MongoDB, Redis) via Docker (./deploy-docker.sh)
 #
 # Uso:
 #   ./deploy.sh                        # Deploy homologação
@@ -226,7 +226,7 @@ check_docker_infra() {
 
     local mongo_ok=false
     local redis_ok=false
-    local postgres_ok=false
+
 
     # Verificar MongoDB
     if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "mockmail.*mongodb"; then
