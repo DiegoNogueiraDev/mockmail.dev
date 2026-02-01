@@ -20,6 +20,12 @@ import { connectToMongoDB } from "./config/mongodb";
 import logger from "./utils/logger";
 import { startProcessor } from "./services/emailProcessor.service";
 
+// IMPORTANTE: Importar os modelos para registrá-los no Mongoose
+// O populate("userId") requer que o modelo User esteja registrado
+import "./models/User";
+import "./models/EmailBox";
+import "./models/Email";
+
 async function main(): Promise<void> {
   logger.info("═".repeat(60));
   logger.info("EMAIL-PROCESSOR - MockMail.dev Email Processor");
