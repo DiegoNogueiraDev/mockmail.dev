@@ -171,6 +171,18 @@ export const processMail = async (req: Request, res: Response) => {
       throw new Error("Internal server error while saving email.");
     }
 
+    // Invalidate cache so frontend sees updated counts
+    try {
+      await invalidateUserEmailsCache(user.id);
+      await invalidateUserBoxesCache(user.id);
+      logger.info(`CONTROL-MAIL - Cache invalidated for user ${user.id}`);
+    } catch (cacheError) {
+      logger.warn(
+        `CONTROL-MAIL - Failed to invalidate cache: ${(cacheError as Error).message}`
+      );
+      // Don't fail the request if cache invalidation fails
+    }
+
     logger.info(
       `CONTROL-MAIL - Email processed successfully for user ${user.id}`
     );

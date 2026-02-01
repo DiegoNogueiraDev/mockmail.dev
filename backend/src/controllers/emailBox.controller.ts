@@ -8,6 +8,7 @@ import {
   setInCache,
   getUserBoxesCacheKey,
   invalidateUserBoxesCache,
+  invalidateUserEmailsCache,
   CACHE_TTL,
 } from "../services/cache.service";
 
@@ -215,8 +216,11 @@ export const deleteBox = async (req: Request, res: Response) => {
     // Delete the box
     await EmailBox.deleteOne({ _id: id });
 
-    // Invalidate user's boxes cache
-    await invalidateUserBoxesCache(userId.toString());
+    // Invalidate user's boxes and emails cache
+    await Promise.all([
+      invalidateUserBoxesCache(userId.toString()),
+      invalidateUserEmailsCache(userId.toString()),
+    ]);
 
     logger.info(`CONTROL-EMAILBOX - Deleted box ${box.address} and ${deletedEmails.deletedCount} emails for user ${userId}`);
     res.status(200).json({
@@ -251,8 +255,11 @@ export const clearBox = async (req: Request, res: Response) => {
 
     const deletedEmails = await Email.deleteMany({ to: box.address });
 
-    // Invalidate user's boxes cache (email count changed)
-    await invalidateUserBoxesCache(userId.toString());
+    // Invalidate user's boxes and emails cache (email count changed)
+    await Promise.all([
+      invalidateUserBoxesCache(userId.toString()),
+      invalidateUserEmailsCache(userId.toString()),
+    ]);
 
     logger.info(`CONTROL-EMAILBOX - Cleared ${deletedEmails.deletedCount} emails from box ${box.address}`);
     res.status(200).json({
