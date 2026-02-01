@@ -1,5 +1,24 @@
 import rateLimit from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
+import { getRedisClient } from '../config/redis';
 import logger from '../utils/logger';
+
+/**
+ * Cria um store Redis para rate limiting, com fallback para memória
+ */
+const createStore = (prefix: string) => {
+  const redisClient = getRedisClient();
+  
+  if (!redisClient) {
+    logger.warn(`RATE-LIMIT - Redis não disponível para ${prefix}, usando memória (pode causar memory leak!)`);
+    return undefined; // express-rate-limit usará MemoryStore por padrão
+  }
+
+  return new RedisStore({
+    sendCommand: (...args: string[]) => redisClient.sendCommand(args),
+    prefix: `rate-limit:${prefix}:`,
+  });
+};
 
 /**
  * Rate limiter para endpoints de autenticação
@@ -12,6 +31,7 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: false,
+  store: createStore('auth'),
   keyGenerator: (req) => {
     // Prioriza X-Forwarded-For (HAProxy) sobre req.ip
     const forwarded = req.headers['x-forwarded-for'];
@@ -43,6 +63,7 @@ export const emailBoxCreationLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  store: createStore('emailbox'),
   keyGenerator: (req) => {
     const forwarded = req.headers['x-forwarded-for'];
     const ip = typeof forwarded === 'string' 
@@ -69,6 +90,7 @@ export const generalLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  store: createStore('general'),
   keyGenerator: (req) => {
     const forwarded = req.headers['x-forwarded-for'];
     const ip = typeof forwarded === 'string' 
@@ -98,6 +120,7 @@ export const strictLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: false,
+  store: createStore('strict'),
   keyGenerator: (req) => {
     const forwarded = req.headers['x-forwarded-for'];
     const ip = typeof forwarded === 'string' 
@@ -109,15 +132,8 @@ export const strictLimiter = rateLimit({
     const ip = req.headers['x-forwarded-for'] || req.ip;
     logger.warn(`RATE-LIMIT - Limite estrito excedido para IP: ${ip} em ${req.path}`);
     res.status(429).json({
-      message: 'Rate limit exceeded for sensitive operation.',
+      message: 'Too many requests. Please slow down.',
       retryAfter: '1 minute'
     });
   }
 });
-
-export default {
-  authLimiter,
-  emailBoxCreationLimiter,
-  generalLimiter,
-  strictLimiter
-};

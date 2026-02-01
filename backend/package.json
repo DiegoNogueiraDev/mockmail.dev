@@ -52,6 +52,7 @@
     "node-cron": "^3.0.3",
     "pg": "^8.11.3",
     "prisma": "^7.3.0",
+    "rate-limit-redis": "^4.2.0",
     "redis": "^5.10.0",
     "sanitize-html": "^2.14.0",
     "sequelize": "^6.37.5",
