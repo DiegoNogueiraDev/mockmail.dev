@@ -40,7 +40,8 @@ interface PM2Process {
 }
 
 // Sanitiza uma string para uso seguro (remove caracteres perigosos)
-function sanitizeForLog(input: string): string {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _sanitizeForLog(input: string): string {
   return input.replace(/[^\w\s\-:.]/g, '');
 }
 

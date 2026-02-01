@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Calendar, TrendingUp, TrendingDown, Mail, AlertTriangle } from 'lucide-react';
+import { Calendar, TrendingUp, TrendingDown } from 'lucide-react';
 import { formatToBrazilianTime } from '../lib/utils/dateFormatter';
 
 interface DailyStats {
@@ -33,7 +33,6 @@ const DailyStatsCard = ({ today, yesterday, last7Days }: DailyStatsCardProps) =>
   };
 
   const emailsTrend = getTrend(today.emailsProcessed, yesterday.emailsProcessed);
-  const errorsTrend = getTrend(today.emailsErrors, yesterday.emailsErrors);
 
   const totalLast7Days = last7Days.reduce((sum, day) => sum + day.emailsProcessed, 0);
   const avgPerDay = Math.round(totalLast7Days / 7);

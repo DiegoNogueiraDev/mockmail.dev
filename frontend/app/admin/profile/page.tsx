@@ -48,7 +48,7 @@ interface PasswordRequirements {
 }
 
 export default function ProfilePage() {
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -152,7 +152,7 @@ export default function ProfilePage() {
       } else {
         toast.error(response.data?.error || 'Erro ao atualizar nome');
       }
-    } catch (err) {
+    } catch {
       toast.error('Erro ao atualizar nome');
     } finally {
       setSavingName(false);

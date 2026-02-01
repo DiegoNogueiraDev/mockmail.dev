@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Zap, CheckCircle, XCircle, Clock } from 'lucide-react';
 
 interface EndpointStatus {
@@ -13,7 +13,7 @@ interface EndpointStatus {
 }
 
 export default function ApiEndpointStatus() {
-  const [endpoints, setEndpoints] = useState<EndpointStatus[]>([
+  const [endpoints] = useState<EndpointStatus[]>([
     {
       name: 'Mail Process',
       path: '/api/mail/process',

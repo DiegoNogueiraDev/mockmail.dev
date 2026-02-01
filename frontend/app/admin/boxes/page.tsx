@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/apiClient';
 import {
@@ -26,8 +25,7 @@ interface EmailBox {
   updatedAt: string;
 }
 
-interface BoxesResponse {
-  success: boolean;
+interface BoxesData {
   data: EmailBox[];
   pagination: {
     page: number;
@@ -48,29 +46,26 @@ export default function BoxesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [clearingId, setClearingId] = useState<string | null>(null);
 
-  const router = useRouter();
-
-  const fetchBoxes = async () => {
+  const fetchBoxes = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await api.get<BoxesResponse>(`/api/boxes?page=${page}&limit=10`);
+      const response = await api.get<BoxesData>(`/api/boxes?page=${page}&limit=10`);
       if (response.success && response.data) {
-        setBoxes(response.data);
-        setTotalPages(response.pagination?.totalPages || 1);
+        setBoxes(response.data.data || []);
+        setTotalPages(response.data.pagination?.totalPages || 1);
       }
-    } catch (err) {
-      console.error('Failed to fetch boxes:', err);
+    } catch {
       setError('Não foi possível carregar as caixas de email');
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
 
   useEffect(() => {
     fetchBoxes();
-  }, [page]);
+  }, [fetchBoxes]);
 
   const handleCopyAddress = async (address: string, id: string) => {
     try {

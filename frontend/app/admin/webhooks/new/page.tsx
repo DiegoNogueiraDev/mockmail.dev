@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/apiClient';
 import {
@@ -22,8 +21,6 @@ interface WebhookEvent {
 }
 
 export default function NewWebhookPage() {
-  const router = useRouter();
-
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [selectedEvents, setSelectedEvents] = useState<string[]>(['email_received']);

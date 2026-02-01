@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/apiClient';
 import {
@@ -22,8 +21,6 @@ interface Permission {
 }
 
 export default function NewApiKeyPage() {
-  const router = useRouter();
-
   const [name, setName] = useState('');
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(['read_emails']);
   const [rateLimit, setRateLimit] = useState(1000);

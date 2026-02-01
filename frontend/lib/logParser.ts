@@ -224,7 +224,7 @@ export class LogParser {
         level: 'INFO',
         message: line.trim(),
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -235,7 +235,8 @@ export class LogParser {
   private async buildEmailStatus(
     emailData: Record<string, unknown>, 
     processorLogs: LogEntry[], 
-    apiLogs: LogEntry[]
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _apiLogs: LogEntry[]
   ): Promise<EmailStatus> {
     
     const steps: EmailStep[] = [];
@@ -341,7 +342,7 @@ export class LogParser {
       const filePath = path.join(this.logsPath, file);
       try {
         fs.accessSync(filePath, fs.constants.R_OK);
-      } catch (error) {
+      } catch {
         errors.push(`Arquivo não acessível: ${filePath}`);
       }
     }

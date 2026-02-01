@@ -37,8 +37,7 @@ interface ApiKeyItem {
   };
 }
 
-interface ApiKeysResponse {
-  success: boolean;
+interface ApiKeysData {
   data: ApiKeyItem[];
   pagination: {
     page: number;
@@ -70,13 +69,12 @@ export default function ApiKeysPage() {
     setError(null);
 
     try {
-      const response = await api.get<ApiKeysResponse>(`/api/api-keys?page=${page}&limit=10`);
+      const response = await api.get<ApiKeysData>(`/api/api-keys?page=${page}&limit=10`);
       if (response.success && response.data) {
-        setApiKeys(response.data);
-        setTotalPages(response.pagination?.totalPages || 1);
+        setApiKeys(response.data.data || []);
+        setTotalPages(response.data.pagination?.totalPages || 1);
       }
-    } catch (err) {
-      console.error('Failed to fetch API keys:', err);
+    } catch {
       setError('Não foi possível carregar as API keys');
     } finally {
       setLoading(false);
@@ -85,6 +83,7 @@ export default function ApiKeysPage() {
 
   useEffect(() => {
     fetchApiKeys();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   const handleCopy = async (keyPrefix: string, id: string) => {

@@ -9,7 +9,7 @@ import RecentErrors from './RecentErrors';
 import ApiEndpointStatus from './ApiEndpointStatus';
 import DailyStatsCard from './DailyStatsCard';
 import { useMetrics, useErrors, useChartData, useDailyStats } from '../lib/hooks/useMetrics';
-import { Activity, Mail, Users, AlertTriangle, Clock, Calendar } from 'lucide-react';
+import { Activity, Mail, AlertTriangle, Clock, Calendar } from 'lucide-react';
 
 const Dashboard = () => {
   const { metrics, loading: metricsLoading, error: metricsError } = useMetrics();

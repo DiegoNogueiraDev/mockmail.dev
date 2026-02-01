@@ -1,5 +1,5 @@
 import React from 'react';
-import { EmailStatus, EmailStep, EmailStepStatus } from '@/types/email';
+import { EmailStatus, EmailStepStatus } from '@/types/email';
 import { CheckCircle, XCircle, Clock, AlertTriangle, ArrowRight, Mail, Database, Search, Cpu, Server } from 'lucide-react';
 import { format } from 'date-fns';
 

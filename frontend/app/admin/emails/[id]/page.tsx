@@ -18,7 +18,7 @@ import {
   FileText,
   Code,
   Link as LinkIcon,
-  Image,
+  Image as ImageIcon,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -76,6 +76,7 @@ export default function EmailDetailPage() {
 
   useEffect(() => {
     fetchEmail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emailId]);
 
   const handleDelete = async () => {
@@ -381,7 +382,7 @@ export default function EmailDetailPage() {
           {email.body.metadata.images.length > 0 && (
             <div className="card-brand p-6" data-testid="email-images">
               <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
-                <Image className="w-4 h-4" />
+                <ImageIcon className="w-4 h-4" />
                 Imagens ({email.body.metadata.images.length})
               </h3>
               <ul className="space-y-2 max-h-48 overflow-auto">

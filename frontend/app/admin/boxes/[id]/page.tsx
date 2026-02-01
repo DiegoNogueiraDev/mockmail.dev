@@ -69,7 +69,7 @@ export default function BoxDetailPage() {
       } else {
         setError('Caixa não encontrada');
       }
-    } catch (err) {
+    } catch {
       setError('Erro ao carregar caixa');
     }
   };
@@ -82,8 +82,8 @@ export default function BoxDetailPage() {
         setEmails(response.data.data);
         setTotalPages(response.data.pagination.totalPages);
       }
-    } catch (err) {
-      console.error('Error fetching emails:', err);
+    } catch {
+      // Error fetching emails
     } finally {
       setEmailsLoading(false);
     }
@@ -97,12 +97,14 @@ export default function BoxDetailPage() {
       setLoading(false);
     };
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boxId]);
 
   useEffect(() => {
     if (!loading) {
       fetchEmails();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   const handleCopy = async () => {

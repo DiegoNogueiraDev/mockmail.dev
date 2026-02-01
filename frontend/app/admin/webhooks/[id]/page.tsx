@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/apiClient';
 import {
-  Webhook,
   ArrowLeft,
   AlertCircle,
   Copy,
@@ -120,6 +119,7 @@ export default function WebhookDetailPage() {
 
   useEffect(() => {
     fetchWebhook();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [webhookId]);
 
   const handleCopy = async (text: string, type: string) => {

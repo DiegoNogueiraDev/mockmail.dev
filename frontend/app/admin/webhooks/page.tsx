@@ -35,8 +35,7 @@ interface WebhookItem {
   };
 }
 
-interface WebhooksResponse {
-  success: boolean;
+interface WebhooksData {
   data: WebhookItem[];
   pagination: {
     page: number;
@@ -86,10 +85,10 @@ export default function WebhooksPage() {
     setError(null);
 
     try {
-      const response = await api.get<WebhooksResponse>(`/api/webhooks?page=${page}&limit=10`);
+      const response = await api.get<WebhooksData>(`/api/webhooks?page=${page}&limit=10`);
       if (response.success && response.data) {
-        setWebhooks(response.data);
-        setTotalPages(response.pagination?.totalPages || 1);
+        setWebhooks(response.data.data || []);
+        setTotalPages(response.data.pagination?.totalPages || 1);
       }
     } catch (err) {
       console.error('Failed to fetch webhooks:', err);
@@ -101,6 +100,7 @@ export default function WebhooksPage() {
 
   useEffect(() => {
     fetchWebhooks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   const handleDelete = async (id: string, name: string) => {
