@@ -25,32 +25,18 @@ export default function NewApiKeyPage() {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(['read_emails']);
   const [rateLimit, setRateLimit] = useState(1000);
   const [expiresInDays, setExpiresInDays] = useState<number | null>(null);
-  const [availablePermissions, setAvailablePermissions] = useState<Permission[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    const fetchPermissions = async () => {
-      try {
-        const response = await api.get<{ success: boolean; data: Permission[] }>('/api/api-keys/permissions');
-        if (response.success && response.data) {
-          setAvailablePermissions(response.data.data);
-        }
-      } catch (err) {
-        console.error('Error fetching permissions:', err);
-        // Fallback permissions
-        setAvailablePermissions([
-          { value: 'read_emails', label: 'Ler Emails', description: 'Permite ler emails e listar caixas' },
-          { value: 'write_emails', label: 'Escrever Emails', description: 'Permite deletar emails' },
-          { value: 'manage_boxes', label: 'Gerenciar Caixas', description: 'Permite criar, editar e deletar caixas' },
-          { value: 'webhooks', label: 'Webhooks', description: 'Permite gerenciar webhooks' },
-        ]);
-      }
-    };
-    fetchPermissions();
-  }, []);
+  // Permissões disponíveis definidas localmente (constante, não precisa de API)
+  const availablePermissions: Permission[] = [
+    { value: 'read_emails', label: 'Ler Emails', description: 'Permite ler emails e listar caixas' },
+    { value: 'write_emails', label: 'Escrever Emails', description: 'Permite deletar emails' },
+    { value: 'manage_boxes', label: 'Gerenciar Caixas', description: 'Permite criar, editar e deletar caixas' },
+    { value: 'webhooks', label: 'Webhooks', description: 'Permite gerenciar webhooks' },
+  ];
 
   const handlePermissionToggle = (permValue: string) => {
     setSelectedPermissions((prev) =>

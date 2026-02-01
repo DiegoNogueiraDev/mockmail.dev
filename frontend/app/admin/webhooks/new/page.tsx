@@ -25,33 +25,19 @@ export default function NewWebhookPage() {
   const [url, setUrl] = useState('');
   const [selectedEvents, setSelectedEvents] = useState<string[]>(['email_received']);
   const [retryCount, setRetryCount] = useState(3);
-  const [availableEvents, setAvailableEvents] = useState<WebhookEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    const fetchEvents = async () => {
-      try {
-        const response = await api.get<{ success: boolean; data: WebhookEvent[] }>('/api/webhooks/events');
-        if (response.success && response.data) {
-          setAvailableEvents(response.data.data);
-        }
-      } catch (err) {
-        console.error('Error fetching events:', err);
-        // Fallback events
-        setAvailableEvents([
-          { value: 'email_received', label: 'Email Recebido', description: 'Disparado quando um novo email chega' },
-          { value: 'email_opened', label: 'Email Aberto', description: 'Disparado quando um email é visualizado' },
-          { value: 'email_clicked', label: 'Link Clicado', description: 'Disparado quando um link no email é clicado' },
-          { value: 'box_created', label: 'Caixa Criada', description: 'Disparado quando uma nova caixa é criada' },
-          { value: 'box_deleted', label: 'Caixa Excluída', description: 'Disparado quando uma caixa é excluída' },
-        ]);
-      }
-    };
-    fetchEvents();
-  }, []);
+  // Eventos disponíveis definidos localmente (constante, não precisa de estado)
+  const availableEvents: WebhookEvent[] = [
+    { value: 'email_received', label: 'Email Recebido', description: 'Disparado quando um novo email chega' },
+    { value: 'email_opened', label: 'Email Aberto', description: 'Disparado quando um email é visualizado' },
+    { value: 'email_clicked', label: 'Link Clicado', description: 'Disparado quando um link no email é clicado' },
+    { value: 'box_created', label: 'Caixa Criada', description: 'Disparado quando uma nova caixa é criada' },
+    { value: 'box_deleted', label: 'Caixa Excluída', description: 'Disparado quando uma caixa é excluída' },
+  ];
 
   const handleEventToggle = (eventValue: string) => {
     setSelectedEvents((prev) =>
@@ -104,11 +90,18 @@ export default function NewWebhookPage() {
         }
       );
 
-      if (response.success && response.data) {
-        setCreatedSecret(response.data.data.secret);
-        toast.success('Webhook criado com sucesso!');
+      if (response.success) {
+        // A API retorna { success: true, data: { secret: '...' } } diretamente
+        const apiResponse = response as unknown as { success: boolean; data: { secret: string }; error?: string };
+        if (apiResponse.data?.secret) {
+          setCreatedSecret(apiResponse.data.secret);
+          toast.success('Webhook criado com sucesso!');
+        } else {
+          setError('Webhook criado, mas secret não foi retornado');
+        }
       } else {
-        setError(response.data?.error || 'Erro ao criar webhook');
+        const apiResponse = response as unknown as { success: boolean; error?: string };
+        setError(apiResponse.error || 'Erro ao criar webhook');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao criar webhook');
