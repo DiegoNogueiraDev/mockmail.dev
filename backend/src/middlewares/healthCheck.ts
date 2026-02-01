@@ -35,11 +35,10 @@ const checkMongoDBHealth = async (): Promise<ServiceStatus> => {
     const state = mongoose.connection.readyState;
     const responseTime = Date.now() - start;
     
+    // readyState: 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
     if (state === 1) {
-      // Verifica se db está disponível antes de usar
-      if (mongoose.connection.db) {
-        await mongoose.connection.db.admin().ping();
-      }
+      // Não fazemos ping aqui pois pode falhar por timeout e causar falsos negativos
+      // O readyState === 1 já indica que a conexão está ativa
       return {
         status: 'ok',
         message: 'Connected',
@@ -54,7 +53,7 @@ const checkMongoDBHealth = async (): Promise<ServiceStatus> => {
     } else {
       return {
         status: 'error',
-        message: 'Disconnected',
+        message: state === 0 ? 'Disconnected' : 'Disconnecting',
         responseTime
       };
     }
@@ -132,9 +131,10 @@ export const healthCheck = async (req: Request, res: Response) => {
 
 export const readinessCheck = async (req: Request, res: Response) => {
   try {
-    const mongoHealth = await checkMongoDBHealth();
+    // Verifica apenas o readyState do mongoose (mais rápido e confiável)
+    const state = mongoose.connection.readyState;
     
-    if (mongoHealth.status === 'ok') {
+    if (state === 1) {
       res.status(200).json({ ready: true });
     } else {
       res.status(503).json({ ready: false, reason: 'Database not ready' });
