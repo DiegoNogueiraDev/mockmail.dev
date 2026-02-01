@@ -154,76 +154,81 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
 /**
  * Lê emails do FIFO e processa
  */
-async function readFromFifo(): Promise<void> {
-  return new Promise((resolve) => {
-    try {
-      // Verifica se o FIFO existe
-      if (!fs.existsSync(FIFO_PATH)) {
-        logger.warn(`EMAIL-PROCESSOR - FIFO não existe: ${FIFO_PATH}`);
-        resolve();
-        return;
-      }
+/**
+ * Lê emails do FIFO de forma contínua e bloqueante
+ * Esta abordagem mantém o FIFO aberto e espera por dados,
+ * evitando o erro "Broken pipe" do Postfix
+ */
+async function readFromFifoContinuous(): Promise<void> {
+  logger.info(`EMAIL-PROCESSOR - Abrindo FIFO em modo bloqueante: ${FIFO_PATH}`);
+  
+  // Verifica se o FIFO existe
+  if (!fs.existsSync(FIFO_PATH)) {
+    logger.error(`EMAIL-PROCESSOR - FIFO não existe: ${FIFO_PATH}`);
+    throw new Error(`FIFO not found: ${FIFO_PATH}`);
+  }
 
-      logger.debug(`EMAIL-PROCESSOR - Lendo FIFO: ${FIFO_PATH}`);
+  // Abre o FIFO em modo de leitura BLOQUEANTE (sem O_NONBLOCK)
+  // Isso mantém o FIFO aberto aguardando escritores
+  const stream = fs.createReadStream(FIFO_PATH, { encoding: "utf-8" });
+  
+  let buffer = "";
 
-      // Abre o FIFO em modo de leitura não-bloqueante
-      const fd = fs.openSync(FIFO_PATH, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
-      const stream = fs.createReadStream("", { fd, encoding: "utf-8" });
-
-      let buffer = "";
-
-      stream.on("data", (chunk: Buffer | string) => {
-        buffer += chunk.toString();
-      });
-
-      stream.on("end", async () => {
-        if (buffer.trim()) {
+  stream.on("data", async (chunk: Buffer | string) => {
+    const data = chunk.toString();
+    logger.debug(`EMAIL-PROCESSOR - Recebidos ${data.length} bytes`);
+    
+    buffer += data;
+    
+    // Processa emails quando encontra uma linha vazia dupla (fim do email)
+    // ou quando o buffer fica muito grande
+    const parts = buffer.split(/\n\n\n/); // Três quebras = separador entre emails
+    
+    if (parts.length > 1) {
+      // Processa todos os emails completos
+      for (let i = 0; i < parts.length - 1; i++) {
+        const emailRaw = parts[i].trim();
+        if (emailRaw) {
           try {
-            const emailData = await parseRawEmail(buffer);
+            logger.info(`EMAIL-PROCESSOR - Processando email (${emailRaw.length} bytes)`);
+            const emailData = await parseRawEmail(emailRaw);
             await processAndPersistEmail(emailData);
+            logger.info(`EMAIL-PROCESSOR - Email processado com sucesso`);
           } catch (error) {
             logger.error(`EMAIL-PROCESSOR - Erro no processamento: ${(error as Error).message}`);
           }
         }
-        resolve();
-      });
-
-      stream.on("error", (error: NodeJS.ErrnoException) => {
-        // EAGAIN é esperado quando o FIFO está vazio (leitura não-bloqueante)
-        if (error.code !== "EAGAIN") {
-          logger.error(`EMAIL-PROCESSOR - Erro na leitura do FIFO: ${error.message}`);
-        }
-        resolve();
-      });
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-      // EAGAIN é esperado quando o FIFO está vazio
-      if (err.code !== "EAGAIN") {
-        logger.error(`EMAIL-PROCESSOR - Erro ao abrir FIFO: ${err.message}`);
       }
-      resolve();
+      // Mantém a última parte (incompleta) no buffer
+      buffer = parts[parts.length - 1];
     }
   });
+
+  stream.on("end", () => {
+    logger.warn(`EMAIL-PROCESSOR - Stream do FIFO encerrado, reabrindo...`);
+    // Se o stream terminar, reabre após um delay
+    setTimeout(() => readFromFifoContinuous(), 1000);
+  });
+
+  stream.on("error", (error) => {
+    logger.error(`EMAIL-PROCESSOR - Erro no stream do FIFO: ${error.message}`);
+    // Reab re após erro
+    setTimeout(() => readFromFifoContinuous(), 2000);
+  });
+
+  logger.info(`EMAIL-PROCESSOR - FIFO aberto, aguardando emails...`);
 }
 
 /**
- * Loop principal do processador
+ * Inicia o processador
  */
 async function startProcessor(): Promise<void> {
-  logger.info(`EMAIL-PROCESSOR - Iniciando monitoramento do FIFO: ${FIFO_PATH}`);
-  logger.info(`EMAIL-PROCESSOR - Intervalo de polling: ${POLL_INTERVAL}ms`);
+  logger.info(`EMAIL-PROCESSOR - Iniciando processador de emails`);
+  logger.info(`EMAIL-PROCESSOR - FIFO: ${FIFO_PATH}`);
   logger.info(`EMAIL-PROCESSOR - Modo debug: ${DEBUG_MODE}`);
-
-  while (true) {
-    try {
-      await readFromFifo();
-    } catch (error) {
-      logger.error(`EMAIL-PROCESSOR - Erro no loop: ${(error as Error).message}`);
-    }
-
-    // Aguarda antes do próximo poll
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
-  }
+  
+  // Inicia leitura contínua do FIFO
+  await readFromFifoContinuous();
 }
 
 export { parseRawEmail, processAndPersistEmail, startProcessor };
