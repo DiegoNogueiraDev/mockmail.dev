@@ -84,6 +84,5 @@ const ApiKeySchema = new Schema(
 
 // Compound index for efficient lookups
 ApiKeySchema.index({ userId: 1, isActive: 1 });
-ApiKeySchema.index({ keyHash: 1 });
 
 export default mongoose.model<IApiKey>("ApiKey", ApiKeySchema);
