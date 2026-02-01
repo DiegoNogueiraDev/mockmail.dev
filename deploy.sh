@@ -929,6 +929,7 @@ module.exports = {
       cwd: './backend',
       script: 'dist/emailProcessor.js',
       interpreter: '${node_path}',
+      exec_mode: 'fork',
       instances: 1,
       autorestart: true,
       watch: false,
