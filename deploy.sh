@@ -625,35 +625,30 @@ validate_database_connections() {
 
     local ALL_OK=true
 
-    # Detectar prefixo do container baseado no ambiente
-    local container_prefix="mockmail"
-    [ "$ENVIRONMENT" = "homologacao" ] && container_prefix="mockmail-hml"
+    # Nomes dos containers por ambiente
+    # Homologação: mockmail-mongodb-hml, mockmail-redis-hml
+    # Produção: mockmail-mongodb, mockmail-redis
+    local mongo_container="mockmail-mongodb"
+    local redis_container="mockmail-redis"
+    [ "$ENVIRONMENT" = "homologacao" ] && mongo_container="mockmail-mongodb-hml"
+    [ "$ENVIRONMENT" = "homologacao" ] && redis_container="mockmail-redis-hml"
 
     # Testar MongoDB
     log_info "Testando MongoDB..."
-    if docker exec "${container_prefix}-mongodb-1" mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1; then
+    if docker exec "$mongo_container" mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1; then
         log_success "MongoDB: Conexão OK"
     else
-        # Tentar nome alternativo
-        if docker exec "mockmail-mongodb-1" mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1; then
-            log_success "MongoDB: Conexão OK"
-        else
-            log_error "MongoDB: Falha na conexão!"
-            ALL_OK=false
-        fi
+        log_error "MongoDB: Falha na conexão!"
+        ALL_OK=false
     fi
 
     # Testar Redis
     log_info "Testando Redis..."
-    if docker exec "${container_prefix}-redis-1" redis-cli ping &>/dev/null 2>&1; then
+    if docker exec "$redis_container" redis-cli ping &>/dev/null 2>&1; then
         log_success "Redis: Conexão OK"
     else
-        if docker exec "mockmail-redis-1" redis-cli ping &>/dev/null 2>&1; then
-            log_success "Redis: Conexão OK"
-        else
-            log_error "Redis: Falha na conexão!"
-            ALL_OK=false
-        fi
+        log_error "Redis: Falha na conexão!"
+        ALL_OK=false
     fi
 
     if [ "$ALL_OK" = false ]; then
@@ -785,8 +780,8 @@ enhanced_health_check() {
 
     # 4. Verificar MongoDB (via Docker)
     log_info "Verificando databases..."
-    if docker exec mockmail-mongodb-1 mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1 || \
-       docker exec mockmail-hml-mongodb-1 mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1; then
+    if docker exec mockmail-mongodb mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1 || \
+       docker exec mockmail-mongodb-hml mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1; then
         log_success "MongoDB: Conectado"
     else
         log_warning "MongoDB: Não foi possível verificar conexão"
@@ -794,8 +789,8 @@ enhanced_health_check() {
     fi
 
     # 5. Verificar Redis (via Docker)
-    if docker exec mockmail-redis-1 redis-cli ping &>/dev/null 2>&1 || \
-       docker exec mockmail-hml-redis-1 redis-cli ping &>/dev/null 2>&1; then
+    if docker exec mockmail-redis redis-cli ping &>/dev/null 2>&1 || \
+       docker exec mockmail-redis-hml redis-cli ping &>/dev/null 2>&1; then
         log_success "Redis: Conectado"
     else
         log_warning "Redis: Não foi possível verificar conexão"
