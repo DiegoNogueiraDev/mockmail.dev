@@ -198,7 +198,8 @@ MONGOEOF
 sed -i "s|USER_EMAIL_PLACEHOLDER|$USER_EMAIL|g" "$MONGO_SCRIPT"
 sed -i "s|HASH_PLACEHOLDER|$DEFAULT_HASH|g" "$MONGO_SCRIPT"
 
-MONGO_CMD="mongosh -u $PARSED_USER -p $PARSED_PASSWORD --authenticationDatabase $PARSED_AUTH_DB $PARSED_DATABASE --quiet --file /tmp/reset-script.js"
+# Construir URI de conexão completa (mais confiável que parâmetros separados)
+MONGO_URI="mongodb://$PARSED_USER:$PARSED_PASSWORD@localhost:27017/$PARSED_DATABASE?authSource=$PARSED_AUTH_DB"
 
 if [ "$DRY_RUN" = true ]; then
     echo -e "${YELLOW}[DRY-RUN] Comando que seria executado:${NC}"
@@ -220,13 +221,7 @@ else
     # Debug: mostrar conteúdo do script no container
     echo -e "${YELLOW}Executando comando no MongoDB...${NC}"
     
-    RESULT=$(docker exec "$DOCKER_CONTAINER" mongosh \
-        -u "$PARSED_USER" \
-        -p "$PARSED_PASSWORD" \
-        --authenticationDatabase "$PARSED_AUTH_DB" \
-        "$PARSED_DATABASE" \
-        --quiet \
-        --file /tmp/reset-script.js 2>&1)
+    RESULT=$(docker exec "$DOCKER_CONTAINER" mongosh "$MONGO_URI" --quiet --file /tmp/reset-script.js 2>&1)
     
     # Limpar script do container
     docker exec "$DOCKER_CONTAINER" rm -f /tmp/reset-script.js 2>/dev/null || true
