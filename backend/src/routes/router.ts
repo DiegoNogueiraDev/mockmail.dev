@@ -10,8 +10,17 @@ import profileRoutes from "./profile.routes";
 import { csrfTokenHandler, csrfProtection } from "../middlewares/csrfMiddleware";
 import dashboardRoutes from "./dashboard.routes";
 import { dailyUserLimitMiddleware } from "../middlewares/dailyUserLimit";
+import internalRoutes from "./internal.routes";
 
 const router = Router();
+
+// Rotas internas (sem limite diário, autenticação própria via token)
+try {
+  router.use("/internal", internalRoutes);
+  logger.info("ROUTE-ROUTER - Rotas internas (/internal) carregadas com sucesso.");
+} catch (error) {
+  logger.error(`ROUTE-ROUTER - Erro ao carregar rotas internas: ${(error as Error).message}`);
+}
 
 // Aplica limite diário de 500 requisições por usuário em todas as rotas
 // (exceto auth que precisa funcionar antes do login)
