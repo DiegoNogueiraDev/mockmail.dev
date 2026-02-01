@@ -3,7 +3,7 @@
 # DEPLOY DOCKER - MockMail.dev (Infraestrutura)
 # =============================================================================
 # Gerencia apenas serviços de infraestrutura via Docker Compose
-# (MongoDB, Redis, PostgreSQL)
+# (MongoDB, Redis)
 #
 # API e Frontend são gerenciados via PM2 (./deploy.sh)
 #
@@ -58,10 +58,7 @@ declare -A REDIS_PORTS=(
     ["producao"]="6379"
 )
 
-declare -A POSTGRES_PORTS=(
-    ["homologacao"]="5433"
-    ["producao"]="5432"
-)
+
 
 # Funções de log
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -118,7 +115,7 @@ parse_args() {
 show_help() {
     echo "MockMail.dev - Deploy Docker (Infraestrutura)"
     echo ""
-    echo "Gerencia MongoDB, Redis e PostgreSQL via Docker."
+    echo "Gerencia MongoDB e Redis via Docker."
     echo "API e Frontend são gerenciados via PM2 (./deploy.sh)"
     echo ""
     echo "Uso: ./deploy-docker.sh [opções]"
@@ -210,7 +207,7 @@ check_prerequisites() {
 do_up() {
     log_step "Subindo infraestrutura"
 
-    log_docker "Iniciando MongoDB, Redis, PostgreSQL..."
+    log_docker "Iniciando MongoDB, Redis..."
     docker_compose up -d
 
     log_success "Infraestrutura iniciada!"
@@ -240,7 +237,7 @@ health_check() {
 
     local mongo_port="${MONGO_PORTS[$ENVIRONMENT]}"
     local redis_port="${REDIS_PORTS[$ENVIRONMENT]}"
-    local postgres_port="${POSTGRES_PORTS[$ENVIRONMENT]}"
+
 
     sleep 3
 
@@ -260,13 +257,7 @@ health_check() {
         log_warning "Redis: Verificar logs"
     fi
 
-    # PostgreSQL
-    if docker_compose exec -T postgres-hml pg_isready &>/dev/null 2>&1 || \
-       docker_compose exec -T postgres pg_isready &>/dev/null 2>&1; then
-        log_success "PostgreSQL: OK (porta $postgres_port)"
-    else
-        log_warning "PostgreSQL: Verificar logs"
-    fi
+
 }
 
 # Mostrar status
@@ -301,7 +292,7 @@ show_summary() {
     echo -e "🔌 Portas:"
     echo -e "   MongoDB:    ${BLUE}localhost:${MONGO_PORTS[$ENVIRONMENT]}${NC}"
     echo -e "   Redis:      ${BLUE}localhost:${REDIS_PORTS[$ENVIRONMENT]}${NC}"
-    echo -e "   PostgreSQL: ${BLUE}localhost:${POSTGRES_PORTS[$ENVIRONMENT]}${NC}"
+
     echo ""
     echo -e "📦 Containers:"
     docker_compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || docker_compose ps
@@ -329,6 +320,9 @@ echo ""
 echo -e "   Ambiente: ${CYAN}$ENVIRONMENT${NC}"
 echo -e "   Ação:     ${CYAN}$ACTION${NC}"
 separator
+
+# Detectar docker compose para todas as ações
+detect_docker_compose || { log_error "Docker Compose não encontrado!"; exit 1; }
 
 case $ACTION in
     up)
