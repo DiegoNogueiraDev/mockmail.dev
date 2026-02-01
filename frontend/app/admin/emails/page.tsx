@@ -47,9 +47,11 @@ export default function EmailsPage() {
 
     try {
       const response = await api.get<EmailsData>(`/api/mail/emails?page=${page}&limit=20`);
-      if (response.success && response.data) {
-        setEmails(response.data.data || []);
-        setTotalPages(response.data.pagination?.totalPages || 1);
+      if (response.success) {
+        // API retorna { success, data: [...], pagination: {...} } diretamente
+        const apiResponse = response as unknown as { success: boolean; data: Email[]; pagination: { totalPages: number } };
+        setEmails(apiResponse.data || []);
+        setTotalPages(apiResponse.pagination?.totalPages || 1);
       }
     } catch {
       setError('Não foi possível carregar os emails');

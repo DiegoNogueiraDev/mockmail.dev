@@ -61,8 +61,10 @@ export default function EmailDetailPage() {
 
     try {
       const response = await api.get<{ success: boolean; data: EmailDetail }>(`/api/mail/emails/${emailId}`);
-      if (response.success && response.data) {
-        setEmail(response.data.data);
+      if (response.success) {
+        // API retorna { success, data: {...} } diretamente
+        const apiResponse = response as unknown as { success: boolean; data: EmailDetail };
+        setEmail(apiResponse.data);
       } else {
         setError('Email não encontrado');
       }

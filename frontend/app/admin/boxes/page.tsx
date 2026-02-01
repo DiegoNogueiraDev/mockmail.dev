@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/apiClient';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import {
   Inbox,
   Plus,
@@ -45,6 +46,23 @@ export default function BoxesPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [clearingId, setClearingId] = useState<string | null>(null);
+  
+  // Modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText: string;
+    variant: 'danger' | 'warning';
+    onConfirm: () => Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirmar',
+    variant: 'danger',
+    onConfirm: async () => {},
+  });
 
   const fetchBoxes = useCallback(async () => {
     setLoading(true);
@@ -52,9 +70,11 @@ export default function BoxesPage() {
 
     try {
       const response = await api.get<BoxesData>(`/api/boxes?page=${page}&limit=10`);
-      if (response.success && response.data) {
-        setBoxes(response.data.data || []);
-        setTotalPages(response.data.pagination?.totalPages || 1);
+      if (response.success) {
+        // API retorna { success, data: [...], pagination: {...} } diretamente
+        const apiResponse = response as unknown as { success: boolean; data: EmailBox[]; pagination: { totalPages: number } };
+        setBoxes(apiResponse.data || []);
+        setTotalPages(apiResponse.pagination?.totalPages || 1);
       }
     } catch {
       setError('Não foi possível carregar as caixas de email');
@@ -78,54 +98,80 @@ export default function BoxesPage() {
     }
   };
 
-  const handleDelete = async (id: string, address: string) => {
-    if (!confirm(`Tem certeza que deseja excluir a caixa ${address}? Todos os emails serão perdidos.`)) {
-      return;
-    }
-
-    setDeletingId(id);
-    try {
-      const response = await api.delete(`/api/boxes/${id}`);
-      if (response.success) {
-        toast.success('Caixa excluída com sucesso');
-        fetchBoxes();
-      } else {
-        toast.error('Erro ao excluir caixa');
-      }
-    } catch {
-      toast.error('Erro ao excluir caixa');
-    } finally {
-      setDeletingId(null);
-    }
+  const handleDelete = (id: string, address: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Excluir caixa de email',
+      message: `Tem certeza que deseja excluir a caixa ${address}? Todos os emails serão perdidos permanentemente.`,
+      confirmText: 'Sim, excluir',
+      variant: 'danger',
+      onConfirm: async () => {
+        setDeletingId(id);
+        try {
+          const response = await api.delete(`/api/boxes/${id}`);
+          if (response.success) {
+            toast.success('Caixa excluída com sucesso');
+            fetchBoxes();
+          } else {
+            toast.error('Erro ao excluir caixa');
+          }
+        } catch {
+          toast.error('Erro ao excluir caixa');
+        } finally {
+          setDeletingId(null);
+        }
+      },
+    });
   };
 
-  const handleClear = async (id: string, address: string) => {
-    if (!confirm(`Tem certeza que deseja limpar todos os emails de ${address}?`)) {
-      return;
-    }
-
-    setClearingId(id);
-    try {
-      const response = await api.post(`/api/boxes/${id}/clear`);
-      if (response.success) {
-        toast.success('Emails limpos com sucesso');
-        fetchBoxes();
-      } else {
-        toast.error('Erro ao limpar emails');
-      }
-    } catch {
-      toast.error('Erro ao limpar emails');
-    } finally {
-      setClearingId(null);
-    }
+  const handleClear = (id: string, address: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Limpar emails',
+      message: `Tem certeza que deseja remover todos os emails de ${address}? Esta ação não pode ser desfeita.`,
+      confirmText: 'Sim, limpar',
+      variant: 'warning',
+      onConfirm: async () => {
+        setClearingId(id);
+        try {
+          const response = await api.post(`/api/boxes/${id}/clear`);
+          if (response.success) {
+            toast.success('Emails limpos com sucesso');
+            fetchBoxes();
+          } else {
+            toast.error('Erro ao limpar emails');
+          }
+        } catch {
+          toast.error('Erro ao limpar emails');
+        } finally {
+          setClearingId(null);
+        }
+      },
+    });
   };
 
   const filteredBoxes = boxes.filter((box) =>
     box.address.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const closeModal = () => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  };
+
   return (
-    <div className="space-y-6" data-testid="boxes-page">
+    <>
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={closeModal}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        variant={confirmModal.variant}
+      />
+
+      <div className="space-y-6" data-testid="boxes-page">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -315,6 +361,7 @@ export default function BoxesPage() {
           </button>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
