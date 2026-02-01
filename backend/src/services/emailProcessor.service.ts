@@ -220,12 +220,22 @@ async function readFromFifoContinuous(): Promise<void> {
     }
   });
 
-  stream.on("end", () => {
+  stream.on("end", async () => {
+    // Processa qualquer email restante no buffer antes de reabrir
+    if (buffer.trim()) {
+      try {
+        logger.info(`EMAIL-PROCESSOR - Processando email pendente (${buffer.length} bytes)`);
+        const emailData = await parseRawEmail(buffer);
+        await processAndPersistEmail(emailData);
+        logger.info(`EMAIL-PROCESSOR - Email processado com sucesso`);
+        buffer = "";
+      } catch (error) {
+        logger.error(`EMAIL-PROCESSOR - Erro no processamento: ${(error as Error).message}`);
+      }
+    }
     logger.warn(`EMAIL-PROCESSOR - Stream do FIFO encerrado, reabrindo...`);
-    // Se o stream terminar, reabre após um delay
     setTimeout(() => readFromFifoContinuous(), 1000);
   });
-
   stream.on("error", (error) => {
     logger.error(`EMAIL-PROCESSOR - Erro no stream do FIFO: ${error.message}`);
     // Reab re após erro
