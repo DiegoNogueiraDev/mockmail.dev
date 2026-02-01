@@ -78,11 +78,13 @@ export default function BoxDetailPage() {
     try {
       const response = await api.get<EmailsData>(`/api/boxes/${boxId}/emails?page=${page}&limit=20`);
       if (response.success && response.data) {
-        setEmails(response.data.data);
-        setTotalPages(response.data.pagination.totalPages);
+        // Garante que emails seja sempre um array, mesmo se a API retornar undefined
+        setEmails(response.data.data || []);
+        setTotalPages(response.data.pagination?.totalPages || 1);
       }
     } catch {
-      // Error fetching emails
+      // Error fetching emails - mantém estado anterior ou array vazio
+      setEmails([]);
     } finally {
       setEmailsLoading(false);
     }
