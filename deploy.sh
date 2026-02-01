@@ -822,137 +822,27 @@ enhanced_health_check() {
     fi
 }
 
-# Criar/Atualizar ecosystem.config.js
+# Verificar ecosystem.config.js
 setup_ecosystem() {
-    log_step "Configurando PM2 Ecosystem"
+    log_step "Verificando PM2 Ecosystem"
 
     cd "$PROJECT_ROOT"
 
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] Criando ecosystem.config.js..."
+        log_info "[DRY RUN] Verificando ecosystem.config.js..."
         return 0
     fi
 
-    local api_port="${API_PORTS[$ENVIRONMENT]}"
-    local frontend_port="${FRONTEND_PORTS[$ENVIRONMENT]}"
-    local env_suffix=""
-
-    if [ "$ENVIRONMENT" = "homologacao" ]; then
-        env_suffix="-hml"
+    # O ecosystem.config.js agora é um arquivo fixo no repositório
+    # que contém TODOS os serviços (produção, homologação e processor)
+    if [ ! -f "ecosystem.config.js" ]; then
+        log_error "ecosystem.config.js não encontrado!"
+        log_info "Este arquivo deve estar versionado no repositório."
+        exit 1
     fi
 
-    # Detectar caminho do Node.js
-    local node_path=$(which node)
-
-    # Verificar se o processor único já está rodando E online
-    # O processor é único e atende todos os ambientes
-    local processor_running=false
-    local processor_status=$(pm2 jlist 2>/dev/null | jq -r '.[] | select(.name=="mockmail-processor") | .pm2_env.status' 2>/dev/null)
-    if [ "$processor_status" = "online" ]; then
-        processor_running=true
-        log_info "Email Processor já está rodando (único para todos os ambientes)"
-    else
-        log_info "Email Processor não encontrado ou não está online, será criado"
-    fi
-
-    # Criar ecosystem.config.js SEM o processor se ele já estiver rodando
-    if [ "$processor_running" = true ]; then
-        cat > ecosystem.config.js << EOF
-module.exports = {
-  apps: [
-    {
-      name: 'mockmail-api${env_suffix}',
-      cwd: './backend',
-      script: 'dist/server.js',
-      interpreter: '${node_path}',
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '500M',
-      env: {
-        NODE_ENV: 'production',
-        PORT: ${api_port},
-        INTERNAL_API_TOKEN: 'mockmail-internal-2026'
-      }
-    },
-    {
-      name: 'mockmail-frontend${env_suffix}',
-      cwd: './frontend',
-      script: 'node_modules/.bin/next',
-      args: 'start -p ${frontend_port}',
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '500M',
-      env: {
-        NODE_ENV: 'production',
-        PORT: ${frontend_port}
-      }
-    }
-  ]
-};
-EOF
-        log_success "ecosystem.config.js criado (API=$api_port, Frontend=$frontend_port) - Processor já ativo"
-    else
-        # Incluir processor único (sem sufixo de ambiente)
-        cat > ecosystem.config.js << EOF
-module.exports = {
-  apps: [
-    {
-      name: 'mockmail-api${env_suffix}',
-      cwd: './backend',
-      script: 'dist/server.js',
-      interpreter: '${node_path}',
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '500M',
-      env: {
-        NODE_ENV: 'production',
-        PORT: ${api_port},
-        INTERNAL_API_TOKEN: 'mockmail-internal-2026'
-      }
-    },
-    {
-      name: 'mockmail-frontend${env_suffix}',
-      cwd: './frontend',
-      script: 'node_modules/.bin/next',
-      args: 'start -p ${frontend_port}',
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '500M',
-      env: {
-        NODE_ENV: 'production',
-        PORT: ${frontend_port}
-      }
-    },
-    {
-      name: 'mockmail-processor',
-      cwd: './backend',
-      script: 'dist/emailProcessor.js',
-      interpreter: '${node_path}',
-      exec_mode: 'fork',
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '256M',
-      env: {
-        NODE_ENV: 'production',
-        MOCKMAIL_FIFO_PATH: '/var/spool/email-processor',
-        MOCKMAIL_DEBUG: 'true',
-        INTERNAL_API_TOKEN: 'mockmail-internal-2026',
-        HML_API_PORT: '3010',
-        PROD_API_PORT: '3000',
-        HML_ENABLED: 'true',
-        PROD_ENABLED: 'true'
-      }
-    }
-  ]
-};
-EOF
-        log_success "ecosystem.config.js criado (API=$api_port, Frontend=$frontend_port, Processor=ÚNICO)"
-    fi
+    log_success "ecosystem.config.js encontrado (arquivo versionado)"
+    log_info "Serviços definidos: mockmail-api, mockmail-api-hml, mockmail-frontend, mockmail-frontend-hml, mockmail-processor"
 }
 
 # Reiniciar serviços PM2
@@ -962,7 +852,7 @@ restart_services() {
     cd "$PROJECT_ROOT"
 
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] pm2 reload ecosystem.config.js"
+        log_info "[DRY RUN] pm2 start ecosystem.config.js"
         return 0
     fi
 
@@ -971,30 +861,36 @@ restart_services() {
         env_suffix="-hml"
     fi
 
-    # Parar serviços antigos do ambiente atual (API e Frontend)
+    # Parar serviços do ambiente atual (API e Frontend)
+    log_info "Parando serviços do ambiente $ENVIRONMENT..."
     pm2 delete "mockmail-api${env_suffix}" 2>/dev/null || true
     pm2 delete "mockmail-frontend${env_suffix}" 2>/dev/null || true
 
-    # O processor é ÚNICO - só deleta se não houver outros ambientes ativos
-    # Verifica se existem outras APIs rodando antes de parar o processor
-    local other_apis=$(pm2 jlist 2>/dev/null | jq -r '.[] | select(.name | startswith("mockmail-api")) | .name' 2>/dev/null | grep -v "mockmail-api${env_suffix}" | wc -l)
-
-    if [ "$other_apis" -eq 0 ]; then
-        # Nenhuma outra API rodando, pode reiniciar o processor
+    # Verificar se o processor está rodando
+    local processor_status=$(pm2 jlist 2>/dev/null | jq -r '.[] | select(.name=="mockmail-processor") | .pm2_env.status' 2>/dev/null)
+    
+    if [ "$processor_status" != "online" ]; then
+        log_info "Processor não está online - será iniciado"
         pm2 delete "mockmail-processor" 2>/dev/null || true
-        log_info "Processor será reiniciado (nenhuma outra API ativa)"
     else
-        log_info "Processor mantido ativo (outras APIs dependem dele)"
+        log_info "Processor já está online - mantido ativo"
     fi
 
-    # Iniciar serviços
-    log_info "Iniciando serviços..."
-    pm2 start ecosystem.config.js
+    # Iniciar serviços do ambiente atual
+    log_info "Iniciando serviços do ambiente $ENVIRONMENT..."
+    pm2 start ecosystem.config.js --only "mockmail-api${env_suffix}"
+    pm2 start ecosystem.config.js --only "mockmail-frontend${env_suffix}"
+
+    # Iniciar processor se não estiver rodando
+    if [ "$processor_status" != "online" ]; then
+        pm2 start ecosystem.config.js --only "mockmail-processor"
+        log_success "Email Processor iniciado"
+    fi
 
     # Salvar configuração PM2
     pm2 save
 
-    log_success "Serviços PM2 iniciados"
+    log_success "Serviços PM2 iniciados para $ENVIRONMENT"
 }
 
 # Parar processadores Python (systemd) - agora usamos TypeScript via PM2

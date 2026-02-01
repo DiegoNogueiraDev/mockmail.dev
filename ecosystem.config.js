@@ -1,17 +1,68 @@
+/**
+ * MockMail.dev - PM2 Ecosystem Configuration
+ * 
+ * Este arquivo define TODOS os serviços gerenciados pelo PM2:
+ * - API Produção (porta 3000)
+ * - API Homologação (porta 3010)
+ * - Frontend Produção (porta 3001)
+ * - Frontend Homologação (porta 3011)
+ * - Email Processor (único - distribui para ambos os ambientes)
+ * 
+ * Uso:
+ *   pm2 start ecosystem.config.js                    # Inicia todos
+ *   pm2 start ecosystem.config.js --only mockmail-api  # Inicia só produção API
+ *   pm2 restart ecosystem.config.js                  # Reinicia todos
+ */
+
 module.exports = {
   apps: [
+    // ============================================
+    // PRODUÇÃO
+    // ============================================
     {
-      name: 'mockmail-api-hml',
+      name: 'mockmail-api',
       cwd: './backend',
       script: 'dist/server.js',
-      interpreter: '/home/anaopcd/.nvm/versions/node/v24.13.0/bin/node',
       instances: 1,
       autorestart: true,
       watch: false,
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'production',
-        PORT: 3010
+        PORT: 3000,
+        INTERNAL_API_TOKEN: 'mockmail-internal-2026'
+      }
+    },
+    {
+      name: 'mockmail-frontend',
+      cwd: './frontend',
+      script: 'node_modules/.bin/next',
+      args: 'start -p 3001',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '500M',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3001
+      }
+    },
+
+    // ============================================
+    // HOMOLOGAÇÃO
+    // ============================================
+    {
+      name: 'mockmail-api-hml',
+      cwd: './backend',
+      script: 'dist/server.js',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '500M',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3010,
+        INTERNAL_API_TOKEN: 'mockmail-internal-2026'
       }
     },
     {
@@ -28,8 +79,29 @@ module.exports = {
         PORT: 3011
       }
     },
-    // NOTA: O mockmail-processor (distribuidor único) é gerenciado separadamente pelo deploy.sh
-    // Ele roda UMA ÚNICA VEZ no servidor e distribui emails para HML e PROD via HTTP
-    // Não inclua mockmail-processor aqui para evitar duplicação!
+
+    // ============================================
+    // EMAIL PROCESSOR (ÚNICO - distribui para HML e PROD)
+    // ============================================
+    {
+      name: 'mockmail-processor',
+      cwd: './backend',
+      script: 'dist/emailProcessor.js',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '256M',
+      env: {
+        NODE_ENV: 'production',
+        MOCKMAIL_FIFO_PATH: '/var/spool/email-processor',
+        MOCKMAIL_DEBUG: 'true',
+        INTERNAL_API_TOKEN: 'mockmail-internal-2026',
+        HML_API_PORT: '3010',
+        PROD_API_PORT: '3000',
+        HML_ENABLED: 'true',
+        PROD_ENABLED: 'true'
+      }
+    }
   ]
 };
