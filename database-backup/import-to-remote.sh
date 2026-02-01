@@ -70,18 +70,26 @@ show_help() {
 # Função para parsear MONGO_URI e extrair componentes
 parse_mongo_uri() {
     local uri="$1"
-    
+
     # Remove o prefixo mongodb://
     local without_prefix="${uri#mongodb://}"
-    
-    # Extrai user:password@host:port/database?authSource=xxx
-    if [[ "$without_prefix" =~ ^([^:]+):([^@]+)@([^:]+):([0-9]+)/([^?]+)\?authSource=(.+)$ ]]; then
+
+    # Extrai user:password@host:port/database?params
+    # Formato: user:password@host:port/database?param1=val1&param2=val2...
+    if [[ "$without_prefix" =~ ^([^:]+):([^@]+)@([^:]+):([0-9]+)/([^?]+)\?(.+)$ ]]; then
         PARSED_USER="${BASH_REMATCH[1]}"
         PARSED_PASSWORD="${BASH_REMATCH[2]}"
         PARSED_HOST="${BASH_REMATCH[3]}"
         PARSED_PORT="${BASH_REMATCH[4]}"
         PARSED_DATABASE="${BASH_REMATCH[5]}"
-        PARSED_AUTH_DB="${BASH_REMATCH[6]}"
+        local params="${BASH_REMATCH[6]}"
+
+        # Extrai authSource dos parâmetros (pode estar em qualquer posição)
+        if [[ "$params" =~ authSource=([^&]+) ]]; then
+            PARSED_AUTH_DB="${BASH_REMATCH[1]}"
+        else
+            PARSED_AUTH_DB="admin"
+        fi
         return 0
     elif [[ "$without_prefix" =~ ^([^:]+):([^@]+)@([^:]+):([0-9]+)/([^?]+)$ ]]; then
         PARSED_USER="${BASH_REMATCH[1]}"
@@ -97,7 +105,7 @@ parse_mongo_uri() {
         PARSED_DATABASE="${BASH_REMATCH[3]}"
         return 0
     fi
-    
+
     return 1
 }
 
