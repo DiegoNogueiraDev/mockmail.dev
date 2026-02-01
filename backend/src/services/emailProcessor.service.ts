@@ -188,12 +188,19 @@ async function readFromFifo(): Promise<void> {
         resolve();
       });
 
-      stream.on("error", (error) => {
-        logger.error(`EMAIL-PROCESSOR - Erro na leitura do FIFO: ${error.message}`);
+      stream.on("error", (error: NodeJS.ErrnoException) => {
+        // EAGAIN é esperado quando o FIFO está vazio (leitura não-bloqueante)
+        if (error.code !== "EAGAIN") {
+          logger.error(`EMAIL-PROCESSOR - Erro na leitura do FIFO: ${error.message}`);
+        }
         resolve();
       });
     } catch (error) {
-      logger.error(`EMAIL-PROCESSOR - Erro ao abrir FIFO: ${(error as Error).message}`);
+      const err = error as NodeJS.ErrnoException;
+      // EAGAIN é esperado quando o FIFO está vazio
+      if (err.code !== "EAGAIN") {
+        logger.error(`EMAIL-PROCESSOR - Erro ao abrir FIFO: ${err.message}`);
+      }
       resolve();
     }
   });
