@@ -1,8 +1,15 @@
+// =============================================================================
+// PM2 Ecosystem Config - MockMail.dev
+// =============================================================================
+// Este arquivo é gerado automaticamente pelo deploy.sh
+// Para personalizar, edite o deploy.sh
+// =============================================================================
+
 module.exports = {
   apps: [
     {
       name: 'mockmail-api',
-      cwd: '/home/anaopcd/mockmail/api',
+      cwd: './backend',
       script: 'dist/server.js',
       instances: 1,
       exec_mode: 'fork',
@@ -13,15 +20,13 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000
       },
-      error_file: '/home/anaopcd/.pm2/logs/mockmail-api-error.log',
-      out_file: '/home/anaopcd/.pm2/logs/mockmail-api-out.log',
       time: true
     },
     {
-      name: 'mockmail-watch',
-      cwd: '/home/anaopcd/mockmail/watch',
-      script: 'npm',
-      args: 'start',
+      name: 'mockmail-frontend',
+      cwd: './frontend',
+      script: 'node_modules/.bin/next',
+      args: 'start -p 3001',
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,
@@ -31,8 +36,6 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3001
       },
-      error_file: '/home/anaopcd/.pm2/logs/mockmail-watch-error.log',
-      out_file: '/home/anaopcd/.pm2/logs/mockmail-watch-out.log',
       time: true
     }
   ]

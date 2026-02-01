@@ -1,23 +1,16 @@
 #!/bin/bash
 # =============================================================================
-# DEPLOY DOCKER - MockMail.dev
+# DEPLOY DOCKER - MockMail.dev (Infraestrutura)
 # =============================================================================
-# Deploy completo via Docker Compose com build limpo
+# Gerencia apenas serviços de infraestrutura via Docker Compose
+# (MongoDB, Redis, PostgreSQL)
 #
-# Características:
-#   - Build limpo de todos os containers (--no-cache)
-#   - Ambiente isolado por portas diferentes
-#   - Suporte a homologação e produção
-#   - Health checks automáticos
-#   - Rollback via tags de imagem
+# API e Frontend são gerenciados via PM2 (./deploy.sh)
 #
 # Uso:
-#   ./deploy-docker.sh                     # Deploy homologação
-#   ./deploy-docker.sh --env=producao      # Deploy produção
-#   ./deploy-docker.sh --no-cache          # Force rebuild sem cache
-#   ./deploy-docker.sh --only=api          # Rebuild apenas API
-#   ./deploy-docker.sh --only=watch        # Rebuild apenas frontend
-#   ./deploy-docker.sh --down              # Parar ambiente
+#   ./deploy-docker.sh                     # Subir infra homologação
+#   ./deploy-docker.sh --env=producao      # Subir infra produção
+#   ./deploy-docker.sh --down              # Parar infra
 #   ./deploy-docker.sh --logs              # Ver logs
 #   ./deploy-docker.sh --status            # Ver status
 #
@@ -40,9 +33,7 @@ PROJECT_ROOT="$SCRIPT_DIR"
 
 # Configurações padrão
 ENVIRONMENT="homologacao"
-NO_CACHE=false
-ONLY_SERVICE=""
-ACTION="deploy"
+ACTION="up"
 FOLLOW_LOGS=false
 
 # Configurações por ambiente
@@ -56,29 +47,20 @@ declare -A PROJECT_NAMES=(
     ["producao"]="mockmail"
 )
 
-declare -A API_PORTS=(
-    ["homologacao"]="3010"
-    ["producao"]="3000"
+# Portas por ambiente
+declare -A MONGO_PORTS=(
+    ["homologacao"]="27018"
+    ["producao"]="27017"
 )
 
-declare -A WATCH_PORTS=(
-    ["homologacao"]="3011"
-    ["producao"]="3001"
+declare -A REDIS_PORTS=(
+    ["homologacao"]="6380"
+    ["producao"]="6379"
 )
 
-declare -A FRONTEND_URLS=(
-    ["homologacao"]="https://homologacao.mockmail.dev"
-    ["producao"]="https://mockmail.dev"
-)
-
-declare -A API_URLS=(
-    ["homologacao"]="https://api.homologacao.mockmail.dev"
-    ["producao"]="https://api.mockmail.dev"
-)
-
-declare -A BRANCHES=(
-    ["homologacao"]="homologacao-mockmail"
-    ["producao"]="master"
+declare -A POSTGRES_PORTS=(
+    ["homologacao"]="5433"
+    ["producao"]="5432"
 )
 
 # Funções de log
@@ -99,14 +81,6 @@ parse_args() {
         case $1 in
             --env=*)
                 ENVIRONMENT="${1#*=}"
-                shift
-                ;;
-            --no-cache)
-                NO_CACHE=true
-                shift
-                ;;
-            --only=*)
-                ONLY_SERVICE="${1#*=}"
                 shift
                 ;;
             --down)
@@ -142,27 +116,30 @@ parse_args() {
 }
 
 show_help() {
-    echo "MockMail.dev - Deploy Docker"
+    echo "MockMail.dev - Deploy Docker (Infraestrutura)"
+    echo ""
+    echo "Gerencia MongoDB, Redis e PostgreSQL via Docker."
+    echo "API e Frontend são gerenciados via PM2 (./deploy.sh)"
     echo ""
     echo "Uso: ./deploy-docker.sh [opções]"
     echo ""
     echo "Opções:"
     echo "  --env=ENV       Ambiente: homologacao (default) ou producao"
-    echo "  --no-cache      Force rebuild sem cache Docker"
-    echo "  --only=SERVICE  Rebuild apenas: api, watch, mongodb, redis, postgres"
-    echo "  --down          Parar todos os containers"
+    echo "  --down          Parar infraestrutura"
     echo "  --logs          Ver logs dos containers"
     echo "  --status        Ver status dos containers"
     echo "  --restart       Reiniciar containers"
-    echo "  --follow, -f    Seguir logs após deploy"
+    echo "  --follow, -f    Seguir logs"
     echo "  --help          Exibir esta ajuda"
     echo ""
     echo "Exemplos:"
-    echo "  ./deploy-docker.sh                      # Deploy homologação"
-    echo "  ./deploy-docker.sh --env=producao       # Deploy produção"
-    echo "  ./deploy-docker.sh --no-cache           # Rebuild limpo"
-    echo "  ./deploy-docker.sh --only=api           # Apenas API"
+    echo "  ./deploy-docker.sh                      # Subir infra homologação"
+    echo "  ./deploy-docker.sh --env=producao       # Subir infra produção"
+    echo "  ./deploy-docker.sh --down               # Parar infra"
     echo "  ./deploy-docker.sh --logs -f            # Ver logs ao vivo"
+    echo ""
+    echo "Depois de subir a infra, execute:"
+    echo "  ./deploy.sh --env=homologacao           # Subir API/Frontend via PM2"
 }
 
 # Obter compose file
@@ -175,19 +152,15 @@ get_project_name() {
     echo "${PROJECT_NAMES[$ENVIRONMENT]}"
 }
 
-# Detectar comando docker compose (v2 ou v1)
+# Detectar comando docker compose
 DOCKER_COMPOSE_CMD=""
 
 detect_docker_compose() {
-    # Tentar docker-compose (v1 - standalone) PRIMEIRO
-    # Prioriza v1 pois é mais comum em servidores de produção
     if command -v docker-compose &> /dev/null; then
         DOCKER_COMPOSE_CMD="docker-compose"
         return 0
     fi
 
-    # Tentar docker compose (v2 - integrado ao Docker)
-    # Usa subshell para evitar problemas com set -e
     if (docker compose version) &> /dev/null 2>&1; then
         DOCKER_COMPOSE_CMD="docker compose"
         return 0
@@ -208,216 +181,73 @@ docker_compose() {
 check_prerequisites() {
     log_step "Verificando pré-requisitos"
 
-    # Docker
     if ! command -v docker &> /dev/null; then
         log_error "Docker não encontrado!"
         exit 1
     fi
     log_success "Docker $(docker --version | cut -d' ' -f3 | tr -d ',')"
 
-    # Docker Compose (v2 ou v1)
     if ! detect_docker_compose; then
         log_error "Docker Compose não encontrado!"
-        log_info "Instale com: sudo apt install docker-compose-plugin"
-        log_info "Ou: sudo apt install docker-compose"
         exit 1
     fi
 
     if [ "$DOCKER_COMPOSE_CMD" = "docker compose" ]; then
-        log_success "Docker Compose v2 ($($DOCKER_COMPOSE_CMD version --short 2>/dev/null || echo 'OK'))"
+        log_success "Docker Compose v2"
     else
-        log_success "Docker Compose v1 ($($DOCKER_COMPOSE_CMD --version | cut -d' ' -f3 2>/dev/null || echo 'OK'))"
+        log_success "Docker Compose v1"
     fi
 
-    # Verificar compose file
     local compose_file=$(get_compose_file)
     if [ ! -f "$PROJECT_ROOT/$compose_file" ]; then
         log_error "Arquivo $compose_file não encontrado!"
         exit 1
     fi
     log_success "Compose file: $compose_file"
-
-    # Git
-    if ! command -v git &> /dev/null; then
-        log_error "Git não encontrado!"
-        exit 1
-    fi
-    log_success "Git $(git --version | cut -d' ' -f3)"
 }
 
-# Atualizar código
-update_code() {
-    log_step "Atualizando código"
+# Subir infraestrutura
+do_up() {
+    log_step "Subindo infraestrutura"
 
-    cd "$PROJECT_ROOT"
+    log_docker "Iniciando MongoDB, Redis, PostgreSQL..."
+    docker_compose up -d
 
-    local branch="${BRANCHES[$ENVIRONMENT]}"
-
-    log_info "Buscando atualizações..."
-    git fetch origin
-
-    # Verificar branch
-    if ! git rev-parse --verify "origin/$branch" &>/dev/null; then
-        log_error "Branch não encontrada: $branch"
-        exit 1
-    fi
-
-    log_info "Mudando para branch: $branch"
-    git checkout "$branch" 2>/dev/null || git checkout -b "$branch" "origin/$branch"
-
-    log_info "Aplicando atualizações..."
-    git pull origin "$branch"
-
-    log_success "Código atualizado: $(git log --oneline -1)"
+    log_success "Infraestrutura iniciada!"
 }
 
-# Build dos containers
-build_containers() {
-    log_step "Build dos Containers"
+# Parar infraestrutura
+do_down() {
+    log_step "Parando infraestrutura"
 
-    local build_args=""
+    docker_compose down --remove-orphans
 
-    if [ "$NO_CACHE" = true ]; then
-        build_args="--no-cache"
-        log_docker "Build sem cache (--no-cache)"
-    fi
-
-    # Build arg com URL da API
-    export NEXT_PUBLIC_API_URL="${API_URLS[$ENVIRONMENT]}"
-
-    # Usar docker build diretamente com --network=host para resolver DNS
-    # (next/font precisa acessar fonts.googleapis.com durante o build)
-    log_docker "Usando --network=host para acesso DNS..."
-
-    if [ -n "$ONLY_SERVICE" ]; then
-        log_docker "Rebuilding apenas: $ONLY_SERVICE"
-        # Para serviço específico, usar docker build direto
-        case "$ONLY_SERVICE" in
-            api|api-hml)
-                docker build $build_args --network=host -t "${PROJECT_NAMES[$ENVIRONMENT]}-api-hml" "$PROJECT_ROOT/api"
-                ;;
-            watch|watch-hml)
-                docker build $build_args --network=host \
-                    --build-arg NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" \
-                    -t "${PROJECT_NAMES[$ENVIRONMENT]}-watch-hml" "$PROJECT_ROOT/watch"
-                ;;
-            *)
-                docker_compose build $build_args "$ONLY_SERVICE"
-                ;;
-        esac
-    else
-        log_docker "Rebuilding todos os serviços..."
-        # Build API
-        log_docker "Building API..."
-        docker build $build_args --network=host \
-            -t "${PROJECT_NAMES[$ENVIRONMENT]}-api-hml" "$PROJECT_ROOT/api"
-
-        # Build Watch (frontend)
-        log_docker "Building Watch (frontend)..."
-        docker build $build_args --network=host \
-            --build-arg NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" \
-            -t "${PROJECT_NAMES[$ENVIRONMENT]}-watch-hml" "$PROJECT_ROOT/watch"
-    fi
-
-    log_success "Build concluído!"
+    log_success "Infraestrutura parada"
 }
 
-# Parar containers antigos
-stop_containers() {
-    log_step "Parando containers existentes"
+# Reiniciar
+do_restart() {
+    log_step "Reiniciando infraestrutura"
 
-    if [ -n "$ONLY_SERVICE" ]; then
-        log_docker "Parando apenas: $ONLY_SERVICE"
-        docker_compose stop "$ONLY_SERVICE" 2>/dev/null || true
-        docker_compose rm -f "$ONLY_SERVICE" 2>/dev/null || true
-    else
-        log_docker "Parando todos os containers..."
-        docker_compose down --remove-orphans 2>/dev/null || true
-    fi
+    docker_compose restart
 
-    log_success "Containers parados"
+    log_success "Infraestrutura reiniciada"
 }
 
-# Iniciar containers
-start_containers() {
-    log_step "Iniciando containers"
-
-    if [ -n "$ONLY_SERVICE" ]; then
-        log_docker "Iniciando apenas: $ONLY_SERVICE"
-        docker_compose up -d "$ONLY_SERVICE"
-    else
-        log_docker "Iniciando todos os serviços..."
-        docker_compose up -d
-    fi
-
-    log_success "Containers iniciados"
-}
-
-# Aguardar containers ficarem saudáveis
-wait_for_health() {
-    log_step "Aguardando containers ficarem saudáveis"
-
-    local max_wait=120
-    local waited=0
-
-    while [ $waited -lt $max_wait ]; do
-        local healthy=true
-
-        # Verificar cada serviço
-        local services=$(docker_compose ps --services 2>/dev/null)
-
-        for service in $services; do
-            local status=$(docker_compose ps --format json "$service" 2>/dev/null | jq -r '.[0].Health // "unknown"' 2>/dev/null || echo "unknown")
-
-            if [ "$status" = "starting" ] || [ "$status" = "unknown" ]; then
-                healthy=false
-                break
-            fi
-        done
-
-        if [ "$healthy" = true ]; then
-            log_success "Todos os containers estão saudáveis!"
-            return 0
-        fi
-
-        echo -n "."
-        sleep 2
-        waited=$((waited + 2))
-    done
-
-    echo ""
-    log_warning "Timeout aguardando containers. Verificando status..."
-    docker_compose ps
-    return 1
-}
-
-# Verificar saúde dos serviços
+# Verificar saúde
 health_check() {
     log_step "Verificação de Saúde"
 
-    local api_port="${API_PORTS[$ENVIRONMENT]}"
-    local watch_port="${WATCH_PORTS[$ENVIRONMENT]}"
-    local all_ok=true
+    local mongo_port="${MONGO_PORTS[$ENVIRONMENT]}"
+    local redis_port="${REDIS_PORTS[$ENVIRONMENT]}"
+    local postgres_port="${POSTGRES_PORTS[$ENVIRONMENT]}"
 
-    # API
-    if curl -s -f "http://localhost:$api_port/api/csrf-token" > /dev/null 2>&1; then
-        log_success "API: OK (localhost:$api_port)"
-    else
-        log_error "API: FALHOU (localhost:$api_port)"
-        all_ok=false
-    fi
-
-    # Watch
-    if curl -s -f "http://localhost:$watch_port" > /dev/null 2>&1; then
-        log_success "Watch: OK (localhost:$watch_port)"
-    else
-        log_warning "Watch: Não responde (pode estar iniciando)"
-    fi
+    sleep 3
 
     # MongoDB
     if docker_compose exec -T mongodb-hml mongosh --eval "db.adminCommand('ping')" &>/dev/null 2>&1 || \
        docker_compose exec -T mongodb mongosh --eval "db.adminCommand('ping')" &>/dev/null 2>&1; then
-        log_success "MongoDB: OK"
+        log_success "MongoDB: OK (porta $mongo_port)"
     else
         log_warning "MongoDB: Verificar logs"
     fi
@@ -425,17 +255,18 @@ health_check() {
     # Redis
     if docker_compose exec -T redis-hml redis-cli ping &>/dev/null 2>&1 || \
        docker_compose exec -T redis redis-cli ping &>/dev/null 2>&1; then
-        log_success "Redis: OK"
+        log_success "Redis: OK (porta $redis_port)"
     else
         log_warning "Redis: Verificar logs"
     fi
 
-    if [ "$all_ok" = false ]; then
-        log_error "Alguns serviços falharam! Verifique os logs."
-        return 1
+    # PostgreSQL
+    if docker_compose exec -T postgres-hml pg_isready &>/dev/null 2>&1 || \
+       docker_compose exec -T postgres pg_isready &>/dev/null 2>&1; then
+        log_success "PostgreSQL: OK (porta $postgres_port)"
+    else
+        log_warning "PostgreSQL: Verificar logs"
     fi
-
-    return 0
 }
 
 # Mostrar status
@@ -459,57 +290,29 @@ show_logs() {
     fi
 }
 
-# Parar ambiente
-do_down() {
-    log_step "Parando ambiente $ENVIRONMENT"
-
-    docker_compose down --remove-orphans
-
-    log_success "Ambiente parado"
-}
-
-# Reiniciar containers
-do_restart() {
-    log_step "Reiniciando containers"
-
-    if [ -n "$ONLY_SERVICE" ]; then
-        docker_compose restart "$ONLY_SERVICE"
-    else
-        docker_compose restart
-    fi
-
-    log_success "Containers reiniciados"
-}
-
-# Resumo do deploy
+# Resumo
 show_summary() {
     separator
-    echo -e "${GREEN}🐳 DEPLOY DOCKER CONCLUÍDO - MockMail.dev${NC}"
+    echo -e "${GREEN}🐳 INFRAESTRUTURA DOCKER - MockMail.dev${NC}"
     separator
 
     echo -e "📊 Ambiente: ${CYAN}$ENVIRONMENT${NC}"
-    echo -e "📌 Branch: ${CYAN}${BRANCHES[$ENVIRONMENT]}${NC}"
     echo ""
-    echo -e "🌐 URLs:"
-    echo -e "   Frontend: ${GREEN}${FRONTEND_URLS[$ENVIRONMENT]}${NC}"
-    echo -e "   API:      ${GREEN}${API_URLS[$ENVIRONMENT]}${NC}"
-    echo ""
-    echo -e "🔌 Portas locais:"
-    echo -e "   API:      ${BLUE}localhost:${API_PORTS[$ENVIRONMENT]}${NC}"
-    echo -e "   Watch:    ${BLUE}localhost:${WATCH_PORTS[$ENVIRONMENT]}${NC}"
-    echo ""
-    echo -e "📝 Commit:"
-    cd "$PROJECT_ROOT"
-    git log --oneline -1
+    echo -e "🔌 Portas:"
+    echo -e "   MongoDB:    ${BLUE}localhost:${MONGO_PORTS[$ENVIRONMENT]}${NC}"
+    echo -e "   Redis:      ${BLUE}localhost:${REDIS_PORTS[$ENVIRONMENT]}${NC}"
+    echo -e "   PostgreSQL: ${BLUE}localhost:${POSTGRES_PORTS[$ENVIRONMENT]}${NC}"
     echo ""
     echo -e "📦 Containers:"
-    docker_compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || docker_compose ps
+    docker_compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || docker_compose ps
     echo ""
-    echo -e "🔧 Comandos úteis:"
-    echo -e "   ./deploy-docker.sh --logs -f       # Ver logs ao vivo"
-    echo -e "   ./deploy-docker.sh --status        # Ver status"
-    echo -e "   ./deploy-docker.sh --restart       # Reiniciar"
-    echo -e "   ./deploy-docker.sh --down          # Parar tudo"
+    echo -e "🔧 Próximo passo:"
+    echo -e "   ${GREEN}./deploy.sh --env=$ENVIRONMENT${NC}  # Subir API/Frontend via PM2"
+    echo ""
+    echo -e "📝 Comandos úteis:"
+    echo -e "   ./deploy-docker.sh --logs -f    # Ver logs ao vivo"
+    echo -e "   ./deploy-docker.sh --status     # Ver status"
+    echo -e "   ./deploy-docker.sh --down       # Parar tudo"
 
     separator
 }
@@ -521,32 +324,19 @@ show_summary() {
 parse_args "$@"
 
 separator
-echo -e "${MAGENTA}🐳 DOCKER DEPLOY - MockMail.dev${NC}"
+echo -e "${MAGENTA}🐳 DOCKER INFRA - MockMail.dev${NC}"
 echo ""
 echo -e "   Ambiente: ${CYAN}$ENVIRONMENT${NC}"
 echo -e "   Ação:     ${CYAN}$ACTION${NC}"
-[ "$NO_CACHE" = true ] && echo -e "   ${YELLOW}Build sem cache ativado${NC}"
-[ -n "$ONLY_SERVICE" ] && echo -e "   ${YELLOW}Apenas: $ONLY_SERVICE${NC}"
 separator
 
-# Executar ação
 case $ACTION in
-    deploy)
+    up)
         check_prerequisites
-        update_code
-        stop_containers
-        build_containers
-        start_containers
-        sleep 5
-        wait_for_health || true
-        health_check || true
+        do_up
+        health_check
         show_summary
-
-        if [ "$FOLLOW_LOGS" = true ]; then
-            show_logs
-        fi
-
-        log_success "🎉 Deploy Docker concluído!"
+        log_success "🎉 Infraestrutura pronta!"
         ;;
 
     down)
@@ -563,7 +353,6 @@ case $ACTION in
 
     restart)
         do_restart
-        wait_for_health || true
-        health_check || true
+        health_check
         ;;
 esac

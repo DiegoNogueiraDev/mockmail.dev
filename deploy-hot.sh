@@ -37,9 +37,9 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
-# Diretórios
-API_DIR="$PROJECT_ROOT/api"
-WATCH_DIR="$PROJECT_ROOT/watch"
+# Diretórios (RENOMEADOS)
+API_DIR="$PROJECT_ROOT/backend"
+WATCH_DIR="$PROJECT_ROOT/frontend"
 BACKUP_DIR="$PROJECT_ROOT/.hot-deploy-backups"
 LOCKFILE="/tmp/mockmail-hot-deploy.lock"
 
@@ -206,7 +206,7 @@ do_rollback() {
     fi
 
     # Fazer checkout do commit
-    git checkout "$ROLLBACK_COMMIT" -- api/src watch/app watch/components 2>/dev/null || {
+    git checkout "$ROLLBACK_COMMIT" -- backend/src frontend/app frontend/components 2>/dev/null || {
         log_error "Falha ao restaurar arquivos!"
         exit 1
     }
@@ -272,14 +272,14 @@ check_changes() {
     git log --oneline $LOCAL..$REMOTE 2>/dev/null | head -10
 
     # Detectar mudanças na API
-    API_FILE_CHANGES=$(git diff $LOCAL..$REMOTE --name-only 2>/dev/null | grep "api/" | wc -l)
+    API_FILE_CHANGES=$(git diff $LOCAL..$REMOTE --name-only 2>/dev/null | grep "backend/" | wc -l)
     if [ "$API_FILE_CHANGES" -gt 0 ]; then
         HAS_API_CHANGES=true
         echo -e "\n${BLUE}API:${NC} $API_FILE_CHANGES arquivos modificados"
     fi
 
     # Detectar mudanças no frontend
-    FRONTEND_FILE_CHANGES=$(git diff $LOCAL..$REMOTE --name-only 2>/dev/null | grep "watch/" | wc -l)
+    FRONTEND_FILE_CHANGES=$(git diff $LOCAL..$REMOTE --name-only 2>/dev/null | grep "frontend/" | wc -l)
     if [ "$FRONTEND_FILE_CHANGES" -gt 0 ]; then
         HAS_FRONTEND_CHANGES=true
         echo -e "${BLUE}Frontend:${NC} $FRONTEND_FILE_CHANGES arquivos modificados"
@@ -411,7 +411,7 @@ reload_api() {
         if [ -f "$BACKUP_DIR/last_deploy.rollback" ]; then
             ROLLBACK_COMMIT=$(cat "$BACKUP_DIR/last_deploy.rollback")
             cd "$PROJECT_ROOT"
-            git checkout "$ROLLBACK_COMMIT" -- api/src
+            git checkout "$ROLLBACK_COMMIT" -- backend/src
             cd "$API_DIR"
             npm run build
             pm2 reload mockmail-api --update-env

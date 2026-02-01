@@ -1,20 +1,15 @@
 #!/bin/bash
 # =============================================================================
-# DEPLOY COMPLETO - MockMail.dev
+# DEPLOY PM2 - MockMail.dev
 # =============================================================================
-# Deploy completo com instalação de dependências e rebuild
-#
-# Ambientes:
-#   - Homologação: https://homologacao.mockmail.dev (frontend)
-#                  https://api.homologacao.mockmail.dev (API)
-#   - Produção:    https://mockmail.dev (frontend)
-#                  https://api.mockmail.dev (API)
+# Deploy de API e Frontend via PM2
+# Infraestrutura (MongoDB, Redis, PostgreSQL) via Docker (./deploy-docker.sh)
 #
 # Uso:
-#   ./deploy.sh                    # Deploy para ambiente atual
-#   ./deploy.sh --env=homologacao  # Deploy para homologação
-#   ./deploy.sh --env=producao     # Deploy para produção
-#   ./deploy.sh --branch=feature   # Deploy de branch específica
+#   ./deploy.sh                        # Deploy homologação
+#   ./deploy.sh --env=producao         # Deploy produção
+#   ./deploy.sh --skip-deps            # Pular npm install
+#   ./deploy.sh --skip-build           # Pular build
 #
 # =============================================================================
 
@@ -33,9 +28,9 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
-# Diretórios
-API_DIR="$PROJECT_ROOT/api"
-WATCH_DIR="$PROJECT_ROOT/watch"
+# Diretórios (RENOMEADOS)
+BACKEND_DIR="$PROJECT_ROOT/backend"
+FRONTEND_DIR="$PROJECT_ROOT/frontend"
 EMAIL_PROCESSOR_DIR="$PROJECT_ROOT/email-processor"
 BACKUP_DIR="$PROJECT_ROOT/.deploy-backups"
 
@@ -60,6 +55,17 @@ declare -A API_URLS=(
 declare -A BRANCHES=(
     ["homologacao"]="homologacao-mockmail"
     ["producao"]="master"
+)
+
+# Portas por ambiente
+declare -A API_PORTS=(
+    ["homologacao"]="3010"
+    ["producao"]="3000"
+)
+
+declare -A FRONTEND_PORTS=(
+    ["homologacao"]="3011"
+    ["producao"]="3001"
 )
 
 # Funções de log
@@ -115,7 +121,10 @@ parse_args() {
 }
 
 show_help() {
-    echo "MockMail.dev - Script de Deploy Completo"
+    echo "MockMail.dev - Deploy PM2"
+    echo ""
+    echo "Deploy de API e Frontend via PM2."
+    echo "Infraestrutura via Docker (./deploy-docker.sh)"
     echo ""
     echo "Uso: ./deploy.sh [opções]"
     echo ""
@@ -123,14 +132,13 @@ show_help() {
     echo "  --env=ENV        Ambiente: homologacao (default) ou producao"
     echo "  --branch=BRANCH  Branch específica para deploy"
     echo "  --skip-deps      Pular instalação de dependências"
-    echo "  --skip-build     Pular build (apenas pull e restart)"
+    echo "  --skip-build     Pular build"
     echo "  --dry-run        Simular sem aplicar mudanças"
     echo "  --help           Exibir esta ajuda"
     echo ""
-    echo "Exemplos:"
-    echo "  ./deploy.sh                         # Deploy homologação"
-    echo "  ./deploy.sh --env=producao          # Deploy produção"
-    echo "  ./deploy.sh --branch=feature/xyz    # Deploy de branch específica"
+    echo "Fluxo completo:"
+    echo "  1. ./deploy-docker.sh --env=homologacao   # Subir infra"
+    echo "  2. ./deploy.sh --env=homologacao          # Subir API/Frontend"
 }
 
 # Verificar pré-requisitos
@@ -166,9 +174,55 @@ check_prerequisites() {
     log_success "Git $(git --version | cut -d' ' -f3)"
 
     # Diretórios do projeto
-    [ ! -d "$API_DIR" ] && { log_error "Diretório API não encontrado: $API_DIR"; exit 1; }
-    [ ! -d "$WATCH_DIR" ] && { log_error "Diretório Watch não encontrado: $WATCH_DIR"; exit 1; }
+    [ ! -d "$BACKEND_DIR" ] && { log_error "Diretório backend não encontrado: $BACKEND_DIR"; exit 1; }
+    [ ! -d "$FRONTEND_DIR" ] && { log_error "Diretório frontend não encontrado: $FRONTEND_DIR"; exit 1; }
     log_success "Estrutura do projeto OK"
+}
+
+# Verificar infraestrutura Docker
+check_docker_infra() {
+    log_step "Verificando infraestrutura Docker"
+
+    local mongo_ok=false
+    local redis_ok=false
+    local postgres_ok=false
+
+    # Verificar MongoDB
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "mockmail.*mongodb"; then
+        mongo_ok=true
+        log_success "MongoDB: Rodando"
+    else
+        log_warning "MongoDB: Não encontrado"
+    fi
+
+    # Verificar Redis
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "mockmail.*redis"; then
+        redis_ok=true
+        log_success "Redis: Rodando"
+    else
+        log_warning "Redis: Não encontrado"
+    fi
+
+    # Verificar PostgreSQL
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "mockmail.*postgres"; then
+        postgres_ok=true
+        log_success "PostgreSQL: Rodando"
+    else
+        log_warning "PostgreSQL: Não encontrado"
+    fi
+
+    # Se algum serviço não estiver rodando, avisar
+    if [ "$mongo_ok" = false ] || [ "$redis_ok" = false ] || [ "$postgres_ok" = false ]; then
+        echo ""
+        log_warning "Infraestrutura Docker não está completa!"
+        log_info "Execute primeiro: ./deploy-docker.sh --env=$ENVIRONMENT"
+        echo ""
+        read -p "Continuar mesmo assim? (s/N): " CONTINUE
+        if [[ ! "${CONTINUE:-N}" =~ ^[Ss]$ ]]; then
+            log_info "Deploy cancelado. Execute ./deploy-docker.sh primeiro."
+            exit 0
+        fi
+    fi
 }
 
 # Criar backup
@@ -189,7 +243,7 @@ create_backup() {
     pm2 jlist > "$BACKUP_PATH.pm2.json" 2>/dev/null || true
 
     log_success "Backup criado: $BACKUP_NAME"
-    log_info "Commit atual: $CURRENT_COMMIT"
+    log_info "Commit atual: ${CURRENT_COMMIT:0:8}"
 
     # Limpar backups antigos (manter últimos 5)
     cd "$BACKUP_DIR"
@@ -205,14 +259,10 @@ update_code() {
     cd "$PROJECT_ROOT"
 
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] Simulando git fetch e checkout..."
-        git fetch origin
-        log_info "Branch: $BRANCH"
-        git log origin/$BRANCH --oneline -5
+        log_info "[DRY RUN] Simulando git pull..."
         return 0
     fi
 
-    # Fetch
     log_info "Buscando atualizações..."
     git fetch origin
 
@@ -222,43 +272,46 @@ update_code() {
         exit 1
     fi
 
-    # Checkout da branch
     log_info "Mudando para branch: $BRANCH"
     git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" "origin/$BRANCH"
 
-    # Pull
     log_info "Aplicando atualizações..."
     git pull origin "$BRANCH"
 
-    NEW_COMMIT=$(git rev-parse HEAD)
     log_success "Código atualizado: $(git log --oneline -1)"
 }
 
-# Instalar dependências da API
-install_api_deps() {
-    log_step "Instalando dependências da API"
+# Instalar dependências do Backend
+install_backend_deps() {
+    log_step "Instalando dependências do Backend"
 
-    cd "$API_DIR"
+    cd "$BACKEND_DIR"
 
     if [ "$SKIP_DEPS" = true ]; then
-        log_info "Pulando instalação de dependências (--skip-deps)"
+        log_info "Pulando instalação (--skip-deps)"
         return 0
     fi
 
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] npm install"
+        log_info "[DRY RUN] npm ci"
         return 0
     fi
 
+    # Limpar node_modules para build limpo
+    log_info "Limpando node_modules..."
+    rm -rf node_modules package-lock.json
+
+    log_info "Instalando dependências..."
     npm install
-    log_success "Dependências da API instaladas"
+
+    log_success "Dependências do backend instaladas"
 }
 
-# Build da API
-build_api() {
-    log_step "Compilando API"
+# Build do Backend
+build_backend() {
+    log_step "Compilando Backend"
 
-    cd "$API_DIR"
+    cd "$BACKEND_DIR"
 
     if [ "$SKIP_BUILD" = true ]; then
         log_info "Pulando build (--skip-build)"
@@ -271,37 +324,46 @@ build_api() {
     fi
 
     # Limpar build anterior
+    log_info "Limpando build anterior..."
     rm -rf dist/
 
+    log_info "Compilando TypeScript..."
     npm run build
-    log_success "API compilada"
+
+    log_success "Backend compilado"
 }
 
-# Instalar dependências do Watch
-install_watch_deps() {
-    log_step "Instalando dependências do Watch (Frontend)"
+# Instalar dependências do Frontend
+install_frontend_deps() {
+    log_step "Instalando dependências do Frontend"
 
-    cd "$WATCH_DIR"
+    cd "$FRONTEND_DIR"
 
     if [ "$SKIP_DEPS" = true ]; then
-        log_info "Pulando instalação de dependências (--skip-deps)"
+        log_info "Pulando instalação (--skip-deps)"
         return 0
     fi
 
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] npm install"
+        log_info "[DRY RUN] npm ci"
         return 0
     fi
 
+    # Limpar node_modules para build limpo
+    log_info "Limpando node_modules..."
+    rm -rf node_modules package-lock.json
+
+    log_info "Instalando dependências..."
     npm install
-    log_success "Dependências do Watch instaladas"
+
+    log_success "Dependências do frontend instaladas"
 }
 
-# Build do Watch
-build_watch() {
-    log_step "Compilando Watch (Frontend)"
+# Build do Frontend
+build_frontend() {
+    log_step "Compilando Frontend"
 
-    cd "$WATCH_DIR"
+    cd "$FRONTEND_DIR"
 
     if [ "$SKIP_BUILD" = true ]; then
         log_info "Pulando build (--skip-build)"
@@ -314,13 +376,16 @@ build_watch() {
     fi
 
     # Limpar build anterior
+    log_info "Limpando build anterior..."
     rm -rf .next/
 
     # Definir variáveis de ambiente para build
     export NEXT_PUBLIC_API_URL="${API_URLS[$ENVIRONMENT]}"
 
+    log_info "Compilando Next.js (API_URL: $NEXT_PUBLIC_API_URL)..."
     npm run build
-    log_success "Watch compilado"
+
+    log_success "Frontend compilado"
 }
 
 # Atualizar Email Processor
@@ -351,26 +416,31 @@ update_email_processor() {
     fi
 }
 
-# Configurar PM2
-setup_pm2() {
-    log_step "Configurando PM2"
+# Criar/Atualizar ecosystem.config.js
+setup_ecosystem() {
+    log_step "Configurando PM2 Ecosystem"
 
     cd "$PROJECT_ROOT"
 
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] Configurando PM2..."
+        log_info "[DRY RUN] Criando ecosystem.config.js..."
         return 0
     fi
 
-    # Criar ecosystem se não existir
-    if [ ! -f "ecosystem.config.js" ]; then
-        log_info "Criando ecosystem.config.js..."
-        cat > ecosystem.config.js << 'EOF'
+    local api_port="${API_PORTS[$ENVIRONMENT]}"
+    local frontend_port="${FRONTEND_PORTS[$ENVIRONMENT]}"
+    local env_suffix=""
+    
+    if [ "$ENVIRONMENT" = "homologacao" ]; then
+        env_suffix="-hml"
+    fi
+
+    cat > ecosystem.config.js << EOF
 module.exports = {
   apps: [
     {
-      name: 'mockmail-api',
-      cwd: './api',
+      name: 'mockmail-api${env_suffix}',
+      cwd: './backend',
       script: 'dist/server.js',
       instances: 1,
       autorestart: true,
@@ -378,54 +448,58 @@ module.exports = {
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'production',
-        PORT: 3000
+        PORT: ${api_port}
       }
     },
     {
-      name: 'mockmail-watch',
-      cwd: './watch',
+      name: 'mockmail-frontend${env_suffix}',
+      cwd: './frontend',
       script: 'node_modules/.bin/next',
-      args: 'start -p 3001',
+      args: 'start -p ${frontend_port}',
       instances: 1,
       autorestart: true,
       watch: false,
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'production',
-        PORT: 3001
+        PORT: ${frontend_port}
       }
     }
   ]
 };
 EOF
-        log_success "ecosystem.config.js criado"
-    fi
+
+    log_success "ecosystem.config.js criado (portas: API=$api_port, Frontend=$frontend_port)"
 }
 
-# Reiniciar serviços
+# Reiniciar serviços PM2
 restart_services() {
     log_step "Reiniciando serviços PM2"
 
     cd "$PROJECT_ROOT"
 
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] pm2 restart/reload..."
+        log_info "[DRY RUN] pm2 reload ecosystem.config.js"
         return 0
     fi
 
-    # Verificar se apps já existem no PM2
-    if pm2 list | grep -q "mockmail-api"; then
-        log_info "Recarregando serviços existentes..."
-        pm2 reload ecosystem.config.js --update-env
-    else
-        log_info "Iniciando serviços..."
-        pm2 start ecosystem.config.js
+    local env_suffix=""
+    if [ "$ENVIRONMENT" = "homologacao" ]; then
+        env_suffix="-hml"
     fi
+
+    # Parar serviços antigos se existirem
+    pm2 delete "mockmail-api${env_suffix}" 2>/dev/null || true
+    pm2 delete "mockmail-frontend${env_suffix}" 2>/dev/null || true
+
+    # Iniciar serviços
+    log_info "Iniciando serviços..."
+    pm2 start ecosystem.config.js
 
     # Salvar configuração PM2
     pm2 save
 
-    log_success "Serviços PM2 reiniciados"
+    log_success "Serviços PM2 iniciados"
 }
 
 # Reiniciar Email Processor
@@ -456,6 +530,8 @@ health_check() {
 
     sleep 5
 
+    local api_port="${API_PORTS[$ENVIRONMENT]}"
+    local frontend_port="${FRONTEND_PORTS[$ENVIRONMENT]}"
     local ALL_OK=true
 
     # Verificar PM2
@@ -470,18 +546,18 @@ health_check() {
     fi
 
     # Verificar API
-    if curl -s -f http://localhost:3000/api/csrf-token > /dev/null 2>&1; then
-        log_success "API: OK (localhost:3000)"
+    if curl -s -f "http://localhost:$api_port/api/csrf-token" > /dev/null 2>&1; then
+        log_success "API: OK (localhost:$api_port)"
     else
-        log_error "API: FALHOU"
+        log_error "API: FALHOU (localhost:$api_port)"
         ALL_OK=false
     fi
 
-    # Verificar Watch
-    if curl -s -f http://localhost:3001 > /dev/null 2>&1; then
-        log_success "Watch: OK (localhost:3001)"
+    # Verificar Frontend
+    if curl -s -f "http://localhost:$frontend_port" > /dev/null 2>&1; then
+        log_success "Frontend: OK (localhost:$frontend_port)"
     else
-        log_warning "Watch: Não responde (pode estar iniciando...)"
+        log_warning "Frontend: Não responde (pode estar iniciando...)"
     fi
 
     if [ "$ALL_OK" = false ]; then
@@ -492,29 +568,14 @@ health_check() {
     return 0
 }
 
-# Executar diagnóstico
-run_diagnostics() {
-    log_step "Executando diagnóstico"
-
-    if [ -f "$PROJECT_ROOT/scripts/diagnostico-producao.sh" ]; then
-        chmod +x "$PROJECT_ROOT/scripts/diagnostico-producao.sh"
-
-        if [ "$DRY_RUN" = true ]; then
-            log_info "[DRY RUN] Executando diagnóstico..."
-            return 0
-        fi
-
-        "$PROJECT_ROOT/scripts/diagnostico-producao.sh" "${API_URLS[$ENVIRONMENT]}" || true
-    else
-        log_warning "Script de diagnóstico não encontrado"
-    fi
-}
-
 # Exibir resumo
 show_summary() {
     separator
-    echo -e "${GREEN}🚀 DEPLOY CONCLUÍDO - MockMail.dev${NC}"
+    echo -e "${GREEN}🚀 DEPLOY PM2 CONCLUÍDO - MockMail.dev${NC}"
     separator
+
+    local api_port="${API_PORTS[$ENVIRONMENT]}"
+    local frontend_port="${FRONTEND_PORTS[$ENVIRONMENT]}"
 
     echo -e "📊 Ambiente: ${CYAN}$ENVIRONMENT${NC}"
     echo -e "📌 Branch: ${CYAN}$BRANCH${NC}"
@@ -522,6 +583,10 @@ show_summary() {
     echo -e "🌐 URLs:"
     echo -e "   Frontend: ${GREEN}${FRONTEND_URLS[$ENVIRONMENT]}${NC}"
     echo -e "   API:      ${GREEN}${API_URLS[$ENVIRONMENT]}${NC}"
+    echo ""
+    echo -e "🔌 Portas locais:"
+    echo -e "   API:      ${BLUE}localhost:$api_port${NC}"
+    echo -e "   Frontend: ${BLUE}localhost:$frontend_port${NC}"
     echo ""
     echo -e "📝 Commit:"
     cd "$PROJECT_ROOT"
@@ -531,10 +596,9 @@ show_summary() {
     pm2 list | grep mockmail || true
     echo ""
     echo -e "🔧 Comandos úteis:"
-    echo -e "   pm2 logs mockmail-api      # Logs da API"
-    echo -e "   pm2 logs mockmail-watch    # Logs do frontend"
-    echo -e "   pm2 monit                  # Monitoramento"
-    echo -e "   ./deploy-hot.sh            # Deploy rápido"
+    echo -e "   pm2 logs               # Ver logs"
+    echo -e "   pm2 monit              # Monitoramento"
+    echo -e "   pm2 restart all        # Reiniciar"
 
     separator
 }
@@ -548,7 +612,7 @@ parse_args "$@"
 separator
 echo -e "${GREEN}████████████████████████████████████████████████████████████████${NC}"
 echo -e "${GREEN}█                                                              █${NC}"
-echo -e "${GREEN}█   ${CYAN}MockMail.dev - Deploy Completo${GREEN}                            █${NC}"
+echo -e "${GREEN}█   ${CYAN}MockMail.dev - Deploy PM2${GREEN}                                 █${NC}"
 echo -e "${GREEN}█                                                              █${NC}"
 echo -e "${GREEN}████████████████████████████████████████████████████████████████${NC}"
 echo ""
@@ -573,14 +637,15 @@ fi
 
 # Executar etapas
 check_prerequisites
+check_docker_infra
 create_backup
 update_code
-install_api_deps
-build_api
-install_watch_deps
-build_watch
+install_backend_deps
+build_backend
+install_frontend_deps
+build_frontend
 update_email_processor
-setup_pm2
+setup_ecosystem
 restart_services
 restart_email_processor
 
@@ -588,8 +653,7 @@ restart_email_processor
 log_info "Aguardando estabilização dos serviços..."
 sleep 5
 
-health_check
-# run_diagnostics  # Descomente para executar diagnóstico automático
+health_check || true
 
 show_summary
 
