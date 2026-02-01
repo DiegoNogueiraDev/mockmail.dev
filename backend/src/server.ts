@@ -60,12 +60,19 @@ app.use(cookieParser());
 logger.info("✓ Cookie parser ativado");
 
 // CORS
-const allowedOrigins = [
+const defaultOrigins = [
   "https://mockmail.dev",
   "https://watch.mockmail.dev",
   "http://localhost:3000",
   "http://localhost:3001"
 ];
+
+// Usa ALLOWED_ORIGINS do .env se disponível, senão usa defaults
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(",").map(origin => origin.trim())
+  : defaultOrigins;
+
+logger.info(`CORS - Origens permitidas: ${allowedOrigins.join(", ")}`);
 
 const corsOptions = {
   origin: allowedOrigins,
