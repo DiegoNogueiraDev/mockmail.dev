@@ -54,3 +54,4 @@ dump.pm2
 # Backup files
 *.backup
 *.backup.*
+.deploy-backups/
