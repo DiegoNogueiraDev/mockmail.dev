@@ -1,38 +1,75 @@
 import cron from "node-cron";
-import EmailBox from "../models/EmailBox"; // Supondo que você tenha um modelo de EmailBox
-import Email from "../models/Email"; // Supondo que você tenha um modelo de Email
-import logger from "../utils/logger"; // Importando o logger
+import EmailBox from "../models/EmailBox";
+import Email from "../models/Email";
+import logger from "../utils/logger";
 
-// Função de limpeza
-export const cleanupOldEmails = async () => {
+/**
+ * Limpa emails órfãos - emails cujas caixas foram deletadas pelo TTL do MongoDB.
+ *
+ * Quando o TTL do MongoDB deleta uma EmailBox automaticamente (quando expiresAt < now),
+ * os emails associados ficam órfãos no banco. Esta função remove esses emails.
+ */
+export const cleanupOrphanEmails = async (): Promise<number> => {
   try {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // Buscar todos os endereços de caixas existentes
+    const existingBoxAddresses = await EmailBox.distinct("address");
 
-    // Excluir e-mails que estão há mais de 24 horas
-    await Email.deleteMany({
-      createdAt: {
-        $lt: twentyFourHoursAgo, // E-mails criados antes de 24 horas
-      },
+    // Deletar emails cujo "to" não corresponde a nenhuma caixa existente
+    const result = await Email.deleteMany({
+      to: { $nin: existingBoxAddresses }
     });
 
-    // Excluir caixas de e-mail que estão há mais de 24 horas
-    await EmailBox.deleteMany({
-      createdAt: {
-        $lt: twentyFourHoursAgo, // Caixas de e-mail criadas antes de 24 horas
-      },
-    });
+    if (result.deletedCount > 0) {
+      logger.info(`CLEANUP - ${result.deletedCount} emails órfãos removidos`);
+    }
 
-    logger.info(
-      "CLEANUP - Caixas de e-mail e e-mails antigos foram excluídos."
-    );
+    return result.deletedCount;
   } catch (error) {
-    logger.error(
-      `CLEANUP - Erro ao excluir caixas de e-mail e e-mails: ${
-        (error as Error).message
-      }`
-    );
+    logger.error(`CLEANUP - Erro ao limpar emails órfãos: ${(error as Error).message}`);
+    return 0;
   }
 };
 
-// Agendar a tarefa para ser executada a cada 1 hora
-cron.schedule("0 * * * *", cleanupOldEmails); // Executa no início de cada hora
+/**
+ * Cleanup de emails muito antigos como failsafe.
+ * Isso garante que emails não fiquem indefinidamente caso algo falhe.
+ *
+ * Remove emails com mais de 48 horas (buffer de segurança além das 24h da caixa).
+ */
+export const cleanupOldEmails = async (): Promise<number> => {
+  try {
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    const result = await Email.deleteMany({
+      createdAt: { $lt: fortyEightHoursAgo }
+    });
+
+    if (result.deletedCount > 0) {
+      logger.info(`CLEANUP - ${result.deletedCount} emails antigos (>48h) removidos`);
+    }
+
+    return result.deletedCount;
+  } catch (error) {
+    logger.error(`CLEANUP - Erro ao limpar emails antigos: ${(error as Error).message}`);
+    return 0;
+  }
+};
+
+/**
+ * Executa todas as tarefas de limpeza
+ */
+export const runCleanup = async () => {
+  logger.info("CLEANUP - Iniciando tarefas de limpeza...");
+
+  const orphansDeleted = await cleanupOrphanEmails();
+  const oldDeleted = await cleanupOldEmails();
+
+  logger.info(`CLEANUP - Limpeza concluída. Órfãos: ${orphansDeleted}, Antigos: ${oldDeleted}`);
+};
+
+// Agendar a tarefa para ser executada a cada 15 minutos
+// Mais frequente para garantir que emails órfãos não acumulem
+cron.schedule("*/15 * * * *", runCleanup);
+
+// Exportar para uso em testes ou execução manual
+export default { cleanupOrphanEmails, cleanupOldEmails, runCleanup };

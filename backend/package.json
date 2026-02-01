@@ -16,6 +16,9 @@
     "lint:fix": "eslint src/**/*.ts --fix",
     "migrate:up": "node scripts/migrate.js up",
     "migrate:down": "node scripts/migrate.js down",
+    "migrate:expiration": "node scripts/migration-emailbox-expiration.js migrate",
+    "migrate:diagnose": "node scripts/migration-emailbox-expiration.js diagnose",
+    "cleanup:orphans": "node scripts/migration-emailbox-expiration.js cleanup",
     "docker:build": "docker build -t mockmail-dev .",
     "docker:run": "docker-compose up -d",
     "seed:homologacao": "ts-node src/seeds/seed-homologacao.ts"
