@@ -369,9 +369,18 @@ build_backend() {
     rm -rf dist/
 
     log_info "Compilando TypeScript..."
-    npm run build
+    if ! npm run build; then
+        log_error "Falha na compilação do Backend!"
+        return 1
+    fi
 
-    log_success "Backend compilado"
+    # Verificar se dist foi criado
+    if [ ! -d "dist" ] || [ ! -f "dist/server.js" ]; then
+        log_error "Build do backend falhou: dist/server.js não encontrado!"
+        return 1
+    fi
+
+    log_success "Backend compilado (dist/server.js criado)"
 }
 
 # Instalar dependências do Frontend
@@ -424,9 +433,18 @@ build_frontend() {
     export NEXT_PUBLIC_API_URL="${API_URLS[$ENVIRONMENT]}"
 
     log_info "Compilando Next.js (API_URL: $NEXT_PUBLIC_API_URL)..."
-    npm run build
+    if ! npm run build; then
+        log_error "Falha na compilação do Frontend!"
+        return 1
+    fi
 
-    log_success "Frontend compilado"
+    # Verificar se .next foi criado corretamente
+    if [ ! -d ".next" ] || [ ! -d ".next/server" ]; then
+        log_error "Build do frontend falhou: .next/server não encontrado!"
+        return 1
+    fi
+
+    log_success "Frontend compilado (.next criado)"
 }
 
 # =============================================================================
@@ -449,6 +467,16 @@ setup_email_processor() {
 
     local PROCESSOR_DEST="/opt/mockmail"
     local PROCESSOR_ENV="$EMAIL_PROCESSOR_DIR/.env.$ENVIRONMENT"
+
+    # Verificar se usuário email-processor existe
+    if ! id "email-processor" &>/dev/null; then
+        log_warning "Usuário email-processor não existe. Criando..."
+        sudo useradd -r -s /bin/false -d /opt/mockmail email-processor 2>/dev/null || {
+            log_warning "Não foi possível criar usuário. Usando root."
+        }
+    else
+        log_info "Usuário email-processor: OK"
+    fi
 
     # Criar diretório de destino se não existir
     if [ ! -d "$PROCESSOR_DEST" ]; then
@@ -547,9 +575,14 @@ sync_server_configs() {
             fi
         fi
 
-        # Recarregar Postfix se houve mudanças
+        # Validar e recarregar Postfix se houve mudanças
         if [ "$CHANGES_MADE" = true ]; then
-            sudo systemctl reload postfix 2>/dev/null && log_success "Postfix recarregado" || log_warning "Falha ao recarregar Postfix"
+            log_info "Validando configuração do Postfix..."
+            if sudo postfix check 2>/dev/null; then
+                sudo systemctl reload postfix 2>/dev/null && log_success "Postfix validado e recarregado" || log_warning "Falha ao recarregar Postfix"
+            else
+                log_error "Configuração do Postfix inválida! Verifique os arquivos."
+            fi
         fi
     fi
 
@@ -586,6 +619,149 @@ sync_server_configs() {
             sudo systemctl daemon-reload
             log_success "Systemd daemon recarregado"
         fi
+    fi
+}
+
+# Validar conexões de banco antes do deploy
+validate_database_connections() {
+    log_step "Validando conexões de banco de dados"
+
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Validando conexões..."
+        return 0
+    fi
+
+    local ALL_OK=true
+
+    # Detectar prefixo do container baseado no ambiente
+    local container_prefix="mockmail"
+    [ "$ENVIRONMENT" = "homologacao" ] && container_prefix="mockmail-hml"
+
+    # Testar MongoDB
+    log_info "Testando MongoDB..."
+    if docker exec "${container_prefix}-mongodb-1" mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1; then
+        log_success "MongoDB: Conexão OK"
+    else
+        # Tentar nome alternativo
+        if docker exec "mockmail-mongodb-1" mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null 2>&1; then
+            log_success "MongoDB: Conexão OK"
+        else
+            log_error "MongoDB: Falha na conexão!"
+            ALL_OK=false
+        fi
+    fi
+
+    # Testar Redis
+    log_info "Testando Redis..."
+    if docker exec "${container_prefix}-redis-1" redis-cli ping &>/dev/null 2>&1; then
+        log_success "Redis: Conexão OK"
+    else
+        if docker exec "mockmail-redis-1" redis-cli ping &>/dev/null 2>&1; then
+            log_success "Redis: Conexão OK"
+        else
+            log_error "Redis: Falha na conexão!"
+            ALL_OK=false
+        fi
+    fi
+
+    # Testar PostgreSQL
+    log_info "Testando PostgreSQL..."
+    if docker exec "${container_prefix}-postgres-1" pg_isready -U mockmail &>/dev/null 2>&1; then
+        log_success "PostgreSQL: Conexão OK"
+    else
+        if docker exec "mockmail-postgres-1" pg_isready -U mockmail &>/dev/null 2>&1; then
+            log_success "PostgreSQL: Conexão OK"
+        else
+            log_error "PostgreSQL: Falha na conexão!"
+            ALL_OK=false
+        fi
+    fi
+
+    if [ "$ALL_OK" = false ]; then
+        log_error "Falha na validação de bancos! Verifique se a infraestrutura Docker está rodando."
+        read -p "Continuar mesmo assim? (s/N): " CONTINUE
+        if [[ ! "${CONTINUE:-N}" =~ ^[Ss]$ ]]; then
+            log_info "Deploy cancelado."
+            exit 1
+        fi
+    fi
+}
+
+# Executar Prisma migrations
+run_prisma_migrations() {
+    log_step "Executando Prisma Migrations"
+
+    cd "$BACKEND_DIR"
+
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Prisma migrate deploy..."
+        return 0
+    fi
+
+    if [ ! -f "prisma/schema.prisma" ]; then
+        log_warning "Schema Prisma não encontrado, pulando migrations..."
+        return 0
+    fi
+
+    log_info "Aplicando migrations pendentes..."
+    if npx prisma migrate deploy 2>&1; then
+        log_success "Prisma migrations aplicadas"
+    else
+        log_warning "Nenhuma migration pendente ou erro não crítico"
+    fi
+}
+
+# Função de rollback automático
+rollback_deploy() {
+    log_step "Executando Rollback"
+
+    if [ -z "$BACKUP_PATH" ]; then
+        log_error "Backup não encontrado! Rollback manual necessário."
+        return 1
+    fi
+
+    local commit_file="${BACKUP_PATH}.commit"
+    if [ ! -f "$commit_file" ]; then
+        log_error "Arquivo de commit do backup não encontrado!"
+        return 1
+    fi
+
+    local previous_commit=$(cat "$commit_file")
+    
+    log_warning "Revertendo para commit: $previous_commit"
+
+    cd "$PROJECT_ROOT"
+    
+    # Reverter código
+    git checkout "$previous_commit" -- .
+    
+    # Reconstruir backend
+    cd "$BACKEND_DIR"
+    npm run build
+    
+    # Reconstruir frontend
+    cd "$FRONTEND_DIR"
+    npm run build
+    
+    # Reiniciar serviços
+    cd "$PROJECT_ROOT"
+    pm2 restart ecosystem.config.js
+    
+    log_success "Rollback concluído para commit $previous_commit"
+}
+
+# Wrapper para deploy com rollback automático em caso de falha
+deploy_with_rollback() {
+    local step_name="$1"
+    local step_function="$2"
+
+    if ! $step_function; then
+        log_error "Falha em: $step_name"
+        read -p "Deseja executar rollback automático? (S/n): " DO_ROLLBACK
+        if [[ "${DO_ROLLBACK:-S}" =~ ^[Ss]$ ]]; then
+            rollback_deploy
+        fi
+        exit 1
     fi
 }
 
@@ -868,13 +1044,15 @@ fi
 # Executar etapas
 check_prerequisites
 check_docker_infra
+validate_database_connections
 create_backup
 update_code
 setup_env_files
 install_backend_deps
-build_backend
+build_backend || { log_error "Build do backend falhou!"; exit 1; }
+run_prisma_migrations
 install_frontend_deps
-build_frontend
+build_frontend || { log_error "Build do frontend falhou!"; exit 1; }
 setup_email_processor
 sync_server_configs
 setup_ecosystem
@@ -885,7 +1063,15 @@ restart_email_processor
 log_info "Aguardando estabilização dos serviços..."
 sleep 5
 
-enhanced_health_check || true
+# Health check final
+if ! enhanced_health_check; then
+    log_error "Health check falhou!"
+    read -p "Deseja executar rollback automático? (s/N): " DO_ROLLBACK
+    if [[ "${DO_ROLLBACK:-N}" =~ ^[Ss]$ ]]; then
+        rollback_deploy
+        exit 1
+    fi
+fi
 
 show_summary
 
