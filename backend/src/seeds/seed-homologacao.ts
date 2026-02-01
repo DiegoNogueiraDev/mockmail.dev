@@ -58,7 +58,14 @@ async function connectToMongoDB(): Promise<void> {
   console.log('✅ Conectado ao MongoDB com sucesso!');
 }
 
-async function createUser(userData: typeof SEED_CONFIG.adminUser): Promise<IUser> {
+type UserData = {
+  email: string;
+  password: string;
+  name: string;
+  role: 'admin' | 'user';
+};
+
+async function createUser(userData: UserData): Promise<IUser> {
   // Verificar se usuário já existe
   const existingUser = await User.findOne({ email: userData.email });
   

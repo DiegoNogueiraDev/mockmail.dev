@@ -5,7 +5,7 @@
  * Handles development hot-reload scenarios and production optimizations.
  */
 
-import { PrismaClient } from '../generated/prisma';
+import { PrismaClient, Prisma } from '../generated/prisma';
 import logger from '../utils/logger';
 
 // Declare global variable for development hot-reload
@@ -30,7 +30,7 @@ const createPrismaClient = (): PrismaClient => {
 
   // Log queries in development
   if (process.env.NODE_ENV === 'development') {
-    client.$on('query', (e) => {
+    client.$on('query', (e: Prisma.QueryEvent) => {
       logger.debug(`PRISMA Query: ${e.query}`, {
         params: e.params,
         duration: `${e.duration}ms`,
@@ -39,12 +39,12 @@ const createPrismaClient = (): PrismaClient => {
   }
 
   // Log errors
-  client.$on('error', (e) => {
+  client.$on('error', (e: Prisma.LogEvent) => {
     logger.error('PRISMA Error:', e);
   });
 
   // Log warnings
-  client.$on('warn', (e) => {
+  client.$on('warn', (e: Prisma.LogEvent) => {
     logger.warn('PRISMA Warning:', e);
   });
 

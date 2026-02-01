@@ -179,6 +179,47 @@ check_prerequisites() {
     log_success "Estrutura do projeto OK"
 }
 
+# Configurar arquivos .env
+setup_env_files() {
+    log_step "Configurando arquivos .env"
+
+    local backend_env_template="$PROJECT_ROOT/backend/.env.$ENVIRONMENT"
+    local backend_env_target="$BACKEND_DIR/.env"
+    local frontend_env_template="$PROJECT_ROOT/frontend/.env.$ENVIRONMENT"
+    local frontend_env_target="$FRONTEND_DIR/.env"
+
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Configurando .env files..."
+        return 0
+    fi
+
+    # Backend .env
+    if [ -f "$backend_env_template" ]; then
+        cp "$backend_env_template" "$backend_env_target"
+        log_success "Backend .env copiado de .env.$ENVIRONMENT"
+    else
+        if [ -f "$backend_env_target" ]; then
+            log_warning "Template backend/.env.$ENVIRONMENT não encontrado, usando .env existente"
+        else
+            log_error "Backend .env não encontrado!"
+            log_info "Crie o arquivo: backend/.env.$ENVIRONMENT"
+            exit 1
+        fi
+    fi
+
+    # Frontend .env
+    if [ -f "$frontend_env_template" ]; then
+        cp "$frontend_env_template" "$frontend_env_target"
+        log_success "Frontend .env copiado de .env.$ENVIRONMENT"
+    else
+        if [ -f "$frontend_env_target" ]; then
+            log_warning "Template frontend/.env.$ENVIRONMENT não encontrado, usando .env existente"
+        else
+            log_warning "Frontend .env não encontrado (pode não ser necessário)"
+        fi
+    fi
+}
+
 # Verificar infraestrutura Docker
 check_docker_infra() {
     log_step "Verificando infraestrutura Docker"
@@ -640,6 +681,7 @@ check_prerequisites
 check_docker_infra
 create_backup
 update_code
+setup_env_files
 install_backend_deps
 build_backend
 install_frontend_deps
