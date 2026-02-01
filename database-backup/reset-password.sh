@@ -185,22 +185,38 @@ echo "  Nova senha: $DEFAULT_PASSWORD"
 echo "  Dry run:    $DRY_RUN"
 echo ""
 
-# Escapar caracteres especiais no hash para o MongoDB
-ESCAPED_HASH=$(echo "$DEFAULT_HASH" | sed 's/\$/\\$/g')
+# Criar arquivo temporário com o comando MongoDB (evita problemas de escape)
+MONGO_SCRIPT=$(mktemp)
+cat > "$MONGO_SCRIPT" << 'MONGOEOF'
+db.users.updateOne(
+  { email: "USER_EMAIL_PLACEHOLDER" },
+  { $set: { password: "HASH_PLACEHOLDER" } }
+)
+MONGOEOF
 
-# Montar comando
-UPDATE_CMD="db.users.updateOne({ email: '$USER_EMAIL' }, { \$set: { password: '$DEFAULT_HASH' } })"
+# Substituir placeholders
+sed -i "s|USER_EMAIL_PLACEHOLDER|$USER_EMAIL|g" "$MONGO_SCRIPT"
+sed -i "s|HASH_PLACEHOLDER|$DEFAULT_HASH|g" "$MONGO_SCRIPT"
 
-MONGO_CMD="mongosh -u $PARSED_USER -p $PARSED_PASSWORD --authenticationDatabase $PARSED_AUTH_DB $PARSED_DATABASE --quiet --eval \"$UPDATE_CMD\""
+MONGO_CMD="mongosh -u $PARSED_USER -p $PARSED_PASSWORD --authenticationDatabase $PARSED_AUTH_DB $PARSED_DATABASE --quiet --file /tmp/reset-script.js"
 
 if [ "$DRY_RUN" = true ]; then
     echo -e "${YELLOW}[DRY-RUN] Comando que seria executado:${NC}"
-    echo "docker exec $DOCKER_CONTAINER bash -c \"$MONGO_CMD\""
+    echo "Conteúdo do script:"
+    cat "$MONGO_SCRIPT"
     echo ""
+    rm -f "$MONGO_SCRIPT"
 else
     echo -e "${BLUE}Atualizando senha...${NC}"
 
+    # Copiar script para dentro do container
+    docker cp "$MONGO_SCRIPT" "$DOCKER_CONTAINER":/tmp/reset-script.js 2>/dev/null
+    rm -f "$MONGO_SCRIPT"
+
     RESULT=$(docker exec "$DOCKER_CONTAINER" bash -c "$MONGO_CMD" 2>&1)
+    
+    # Limpar script do container
+    docker exec "$DOCKER_CONTAINER" rm -f /tmp/reset-script.js 2>/dev/null || true
 
     if echo "$RESULT" | grep -q "matchedCount: 1"; then
         if echo "$RESULT" | grep -q "modifiedCount: 1"; then
