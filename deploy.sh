@@ -656,19 +656,6 @@ validate_database_connections() {
         fi
     fi
 
-    # Testar PostgreSQL
-    log_info "Testando PostgreSQL..."
-    if docker exec "${container_prefix}-postgres-1" pg_isready -U mockmail &>/dev/null 2>&1; then
-        log_success "PostgreSQL: Conexão OK"
-    else
-        if docker exec "mockmail-postgres-1" pg_isready -U mockmail &>/dev/null 2>&1; then
-            log_success "PostgreSQL: Conexão OK"
-        else
-            log_error "PostgreSQL: Falha na conexão!"
-            ALL_OK=false
-        fi
-    fi
-
     if [ "$ALL_OK" = false ]; then
         log_error "Falha na validação de bancos! Verifique se a infraestrutura Docker está rodando."
         read -p "Continuar mesmo assim? (s/N): " CONTINUE
@@ -679,28 +666,10 @@ validate_database_connections() {
     fi
 }
 
-# Executar Prisma migrations
+# Prisma migrations - DESATIVADO (PostgreSQL removido)
+# O sistema agora usa exclusivamente MongoDB via Mongoose
 run_prisma_migrations() {
-    log_step "Executando Prisma Migrations"
-
-    cd "$BACKEND_DIR"
-
-    if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] Prisma migrate deploy..."
-        return 0
-    fi
-
-    if [ ! -f "prisma/schema.prisma" ]; then
-        log_warning "Schema Prisma não encontrado, pulando migrations..."
-        return 0
-    fi
-
-    log_info "Aplicando migrations pendentes..."
-    if npx prisma migrate deploy 2>&1; then
-        log_success "Prisma migrations aplicadas"
-    else
-        log_warning "Nenhuma migration pendente ou erro não crítico"
-    fi
+    log_info "Prisma migrations desativadas (MongoDB only)"
 }
 
 # Função de rollback automático
