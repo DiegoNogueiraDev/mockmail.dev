@@ -6,6 +6,7 @@ import { saveEmail } from "./email.service";
 import { findEmailBoxByAddress, findOrCreateEmailBox } from "./emailBox.service";
 import { extractEmail, extractTokenSubject } from "../utils/emailParser";
 import { parseBody } from "../utils/bodyParser";
+import User from "../models/User";
 
 // Configurações via variáveis de ambiente
 const FIFO_PATH = process.env.MOCKMAIL_FIFO_PATH || "/var/spool/email-processor";
@@ -96,22 +97,37 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
     }
 
     // Busca o EmailBox pelo endereço de destino
-    const emailBox = await findEmailBoxByAddress(to);
+    let emailBox = await findEmailBoxByAddress(to);
+    let userId: string;
 
     if (!emailBox) {
-      logger.warn(`EMAIL-PROCESSOR - EmailBox não encontrada para: ${to}`);
-      // Salva em arquivo para não perder o email
-      await saveToJsonFile(emailData);
-      return;
-    }
+      // Caixa não existe - tentar criar automaticamente baseado no remetente (FROM)
+      logger.info(`EMAIL-PROCESSOR - EmailBox não encontrada para: ${to}. Tentando criar automaticamente...`);
+      
+      // Busca usuário pelo email do remetente
+      const senderUser = await User.findOne({ email: from });
+      
+      if (!senderUser) {
+        logger.warn(`EMAIL-PROCESSOR - Usuário remetente não cadastrado: ${from}. Email salvo em JSON.`);
+        await saveToJsonFile(emailData);
+        return;
+      }
 
-    // O userId vem populado do findEmailBoxByAddress
-    const userId = (emailBox.userId as any)?._id || emailBox.userId;
-
-    if (!userId) {
-      logger.warn(`EMAIL-PROCESSOR - Usuário não encontrado para EmailBox: ${to}`);
-      await saveToJsonFile(emailData);
-      return;
+      // Cria a caixa automaticamente para o usuário remetente
+      logger.info(`EMAIL-PROCESSOR - Criando caixa ${to} automaticamente para usuário ${senderUser.email}`);
+      emailBox = await findOrCreateEmailBox(to, senderUser._id.toString());
+      userId = senderUser._id.toString();
+      
+      logger.info(`EMAIL-PROCESSOR - Caixa ${to} criada com sucesso!`);
+    } else {
+      // Caixa existe - usa o userId dela
+      userId = (emailBox.userId as any)?._id?.toString() || emailBox.userId?.toString();
+      
+      if (!userId) {
+        logger.warn(`EMAIL-PROCESSOR - Usuário não encontrado para EmailBox existente: ${to}`);
+        await saveToJsonFile(emailData);
+        return;
+      }
     }
 
     // Parseia o body do email
