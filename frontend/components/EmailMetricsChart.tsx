@@ -66,8 +66,8 @@ const EmailMetricsChart = ({ data }: EmailMetricsChartProps) => {
                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
               }}
               labelStyle={{ color: '#374151', fontWeight: '500' }}
-              formatter={(value: number, name: string) => [
-                value,
+              formatter={(value, name) => [
+                value ?? 0,
                 name === 'success' ? 'Successful Emails' : 'Failed Emails'
               ]}
               labelFormatter={(label) => `Time: ${label}`}
