@@ -209,7 +209,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 {/* Dropdown menu */}
                 {userMenuOpen && (
                   <div
-                    className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-50"
+                    className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-50"
                     role="menu"
                     data-testid="user-menu-dropdown"
                   >
@@ -217,6 +217,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       href="/admin/profile"
                       className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       role="menuitem"
+                      onClick={() => setUserMenuOpen(false)}
                     >
                       <User className="w-4 h-4" />
                       Meu Perfil
@@ -225,13 +226,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       href="/admin/settings"
                       className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       role="menuitem"
+                      onClick={() => setUserMenuOpen(false)}
                     >
                       <Settings className="w-4 h-4" />
                       Configurações
                     </Link>
                     <hr className="my-1 border-gray-200" />
                     <button
-                      onClick={logout}
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        logout();
+                      }}
                       className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                       role="menuitem"
                       data-testid="logout-button"
