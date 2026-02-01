@@ -210,13 +210,29 @@ else
     echo -e "${BLUE}Atualizando senha...${NC}"
 
     # Copiar script para dentro do container
-    docker cp "$MONGO_SCRIPT" "$DOCKER_CONTAINER":/tmp/reset-script.js 2>/dev/null
+    if ! docker cp "$MONGO_SCRIPT" "$DOCKER_CONTAINER":/tmp/reset-script.js; then
+        echo -e "${RED}Erro ao copiar script para o container${NC}"
+        rm -f "$MONGO_SCRIPT"
+        exit 1
+    fi
     rm -f "$MONGO_SCRIPT"
 
-    RESULT=$(docker exec "$DOCKER_CONTAINER" bash -c "$MONGO_CMD" 2>&1)
+    # Debug: mostrar conteúdo do script no container
+    echo -e "${YELLOW}Executando comando no MongoDB...${NC}"
+    
+    RESULT=$(docker exec "$DOCKER_CONTAINER" mongosh \
+        -u "$PARSED_USER" \
+        -p "$PARSED_PASSWORD" \
+        --authenticationDatabase "$PARSED_AUTH_DB" \
+        "$PARSED_DATABASE" \
+        --quiet \
+        --file /tmp/reset-script.js 2>&1)
     
     # Limpar script do container
     docker exec "$DOCKER_CONTAINER" rm -f /tmp/reset-script.js 2>/dev/null || true
+    
+    # Debug: mostrar resultado
+    echo -e "${YELLOW}Resultado: $RESULT${NC}"
 
     if echo "$RESULT" | grep -q "matchedCount: 1"; then
         if echo "$RESULT" | grep -q "modifiedCount: 1"; then
