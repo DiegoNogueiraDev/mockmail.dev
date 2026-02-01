@@ -54,7 +54,7 @@ declare -A API_URLS=(
 
 declare -A BRANCHES=(
     ["homologacao"]="homologacao-mockmail"
-    ["producao"]="master"
+    ["producao"]="producao-mockmail"
 )
 
 # Portas por ambiente
