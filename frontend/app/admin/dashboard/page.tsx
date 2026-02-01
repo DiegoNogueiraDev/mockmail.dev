@@ -13,6 +13,7 @@ import {
   Plus,
   ArrowUpRight,
   ArrowDownRight,
+  Activity,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -35,10 +36,19 @@ interface RecentEmail {
   boxAddress: string;
 }
 
+interface DailyUsage {
+  used: number;
+  limit: number;
+  remaining: number;
+  percentage: number;
+  resetAt: string;
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentEmails, setRecentEmails] = useState<RecentEmail[]>([]);
+  const [dailyUsage, setDailyUsage] = useState<DailyUsage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,8 +57,8 @@ export default function DashboardPage() {
     setError(null);
 
     try {
-      // Fetch stats
-      const [statsRes, emailsRes] = await Promise.all([
+      // Fetch stats, emails and usage
+      const [statsRes, emailsRes, usageRes] = await Promise.all([
         api.get<DashboardStats>('/api/dashboard/stats').catch(() => ({
           success: true,
           data: {
@@ -63,6 +73,10 @@ export default function DashboardPage() {
           success: true,
           data: [],
         })),
+        api.get<DailyUsage>('/api/dashboard/usage').catch(() => ({
+          success: true,
+          data: { used: 0, limit: 500, remaining: 500, percentage: 0, resetAt: '' },
+        })),
       ]);
 
       if (statsRes.success) {
@@ -70,6 +84,9 @@ export default function DashboardPage() {
       }
       if (emailsRes.success) {
         setRecentEmails(emailsRes.data ?? []);
+      }
+      if (usageRes.success) {
+        setDailyUsage(usageRes.data ?? null);
       }
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
@@ -209,6 +226,80 @@ export default function DashboardPage() {
           );
         })}
       </div>
+
+      {/* Daily Usage Card */}
+      {dailyUsage && (
+        <div className="card-brand p-6" data-testid="daily-usage-card">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                <Activity className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-900">Uso da API Hoje</h3>
+                <p className="text-xs text-gray-500">Limite diário de requisições</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-bold text-gray-900">
+                {loading ? (
+                  <span className="inline-block w-16 h-8 skeleton" />
+                ) : (
+                  <>
+                    {dailyUsage.used.toLocaleString('pt-BR')}
+                    <span className="text-sm font-normal text-gray-500">
+                      /{dailyUsage.limit.toLocaleString('pt-BR')}
+                    </span>
+                  </>
+                )}
+              </p>
+              <p className="text-xs text-gray-500">
+                {dailyUsage.remaining.toLocaleString('pt-BR')} restantes
+              </p>
+            </div>
+          </div>
+          {/* Progress Bar */}
+          <div className="relative">
+            <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  dailyUsage.percentage >= 90
+                    ? 'bg-red-500'
+                    : dailyUsage.percentage >= 70
+                    ? 'bg-amber-500'
+                    : 'bg-gradient-to-r from-[#5636d1] to-[#e2498a]'
+                }`}
+                style={{ width: `${Math.min(dailyUsage.percentage, 100)}%` }}
+              />
+            </div>
+            <div className="flex justify-between mt-2 text-xs text-gray-500">
+              <span>{dailyUsage.percentage}% utilizado</span>
+              <span>
+                Reset às{' '}
+                {dailyUsage.resetAt
+                  ? new Date(dailyUsage.resetAt).toLocaleTimeString('pt-BR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : '00:00'}{' '}
+                UTC
+              </span>
+            </div>
+          </div>
+          {dailyUsage.percentage >= 80 && (
+            <div className={`mt-3 flex items-center gap-2 text-sm ${
+              dailyUsage.percentage >= 90 ? 'text-red-600' : 'text-amber-600'
+            }`}>
+              <AlertCircle className="w-4 h-4" />
+              <span>
+                {dailyUsage.percentage >= 90
+                  ? 'Você está próximo do limite diário!'
+                  : 'Atenção: uso elevado da API hoje'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
