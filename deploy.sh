@@ -845,9 +845,9 @@ setup_ecosystem() {
     log_info "Serviços definidos: mockmail-api, mockmail-api-hml, mockmail-frontend, mockmail-frontend-hml, mockmail-processor"
 }
 
-# Reiniciar serviços PM2
+# Reiniciar serviços PM2 (apenas do ambiente atual)
 restart_services() {
-    log_step "Reiniciando serviços PM2"
+    log_step "Gerenciando serviços PM2 ($ENVIRONMENT)"
 
     cd "$PROJECT_ROOT"
 
@@ -857,40 +857,94 @@ restart_services() {
     fi
 
     local env_suffix=""
+    local api_name="mockmail-api"
+    local frontend_name="mockmail-frontend"
+    
     if [ "$ENVIRONMENT" = "homologacao" ]; then
         env_suffix="-hml"
+        api_name="mockmail-api-hml"
+        frontend_name="mockmail-frontend-hml"
     fi
 
-    # Parar serviços do ambiente atual (API e Frontend)
-    log_info "Parando serviços do ambiente $ENVIRONMENT..."
-    pm2 delete "mockmail-api${env_suffix}" 2>/dev/null || true
-    pm2 delete "mockmail-frontend${env_suffix}" 2>/dev/null || true
+    # Função auxiliar para verificar status de um serviço
+    get_service_status() {
+        local service_name="$1"
+        pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"$service_name\") | .pm2_env.status" 2>/dev/null || echo "not_found"
+    }
 
-    # Verificar se o processor está rodando
-    local processor_status=$(pm2 jlist 2>/dev/null | jq -r '.[] | select(.name=="mockmail-processor") | .pm2_env.status' 2>/dev/null)
-    
-    if [ "$processor_status" != "online" ]; then
-        log_info "Processor não está online - será iniciado"
-        pm2 delete "mockmail-processor" 2>/dev/null || true
+    # ============================================
+    # API do ambiente atual
+    # ============================================
+    local api_status=$(get_service_status "$api_name")
+    if [ "$api_status" = "online" ]; then
+        log_info "API ($api_name): já está online - reiniciando para aplicar atualizações..."
+        pm2 reload "$api_name"
+        log_success "API ($api_name): recarregada"
     else
-        log_info "Processor já está online - mantido ativo"
+        log_info "API ($api_name): não está rodando - iniciando..."
+        pm2 delete "$api_name" 2>/dev/null || true
+        pm2 start ecosystem.config.js --only "$api_name"
+        log_success "API ($api_name): iniciada"
     fi
 
-    # Iniciar serviços do ambiente atual
-    log_info "Iniciando serviços do ambiente $ENVIRONMENT..."
-    pm2 start ecosystem.config.js --only "mockmail-api${env_suffix}"
-    pm2 start ecosystem.config.js --only "mockmail-frontend${env_suffix}"
+    # ============================================
+    # Frontend do ambiente atual
+    # ============================================
+    local frontend_status=$(get_service_status "$frontend_name")
+    if [ "$frontend_status" = "online" ]; then
+        log_info "Frontend ($frontend_name): já está online - reiniciando para aplicar atualizações..."
+        pm2 reload "$frontend_name"
+        log_success "Frontend ($frontend_name): recarregado"
+    else
+        log_info "Frontend ($frontend_name): não está rodando - iniciando..."
+        pm2 delete "$frontend_name" 2>/dev/null || true
+        pm2 start ecosystem.config.js --only "$frontend_name"
+        log_success "Frontend ($frontend_name): iniciado"
+    fi
 
-    # Iniciar processor se não estiver rodando
-    if [ "$processor_status" != "online" ]; then
+    # ============================================
+    # Processor (único para todos os ambientes)
+    # ============================================
+    local processor_status=$(get_service_status "mockmail-processor")
+    if [ "$processor_status" = "online" ]; then
+        log_info "Processor: já está online - NÃO será reiniciado (atende múltiplos ambientes)"
+    else
+        log_info "Processor: não está rodando - iniciando..."
+        pm2 delete "mockmail-processor" 2>/dev/null || true
         pm2 start ecosystem.config.js --only "mockmail-processor"
-        log_success "Email Processor iniciado"
+        log_success "Processor: iniciado"
+    fi
+
+    # ============================================
+    # Informar sobre serviços do OUTRO ambiente
+    # ============================================
+    local other_env=""
+    local other_api=""
+    local other_frontend=""
+    
+    if [ "$ENVIRONMENT" = "homologacao" ]; then
+        other_env="produção"
+        other_api="mockmail-api"
+        other_frontend="mockmail-frontend"
+    else
+        other_env="homologação"
+        other_api="mockmail-api-hml"
+        other_frontend="mockmail-frontend-hml"
+    fi
+
+    local other_api_status=$(get_service_status "$other_api")
+    local other_frontend_status=$(get_service_status "$other_frontend")
+
+    if [ "$other_api_status" = "online" ] || [ "$other_frontend_status" = "online" ]; then
+        log_info "Serviços de $other_env mantidos intactos:"
+        [ "$other_api_status" = "online" ] && log_info "  - $other_api: online"
+        [ "$other_frontend_status" = "online" ] && log_info "  - $other_frontend: online"
     fi
 
     # Salvar configuração PM2
     pm2 save
 
-    log_success "Serviços PM2 iniciados para $ENVIRONMENT"
+    log_success "Serviços PM2 do ambiente $ENVIRONMENT gerenciados com sucesso"
 }
 
 # Parar processadores Python (systemd) - agora usamos TypeScript via PM2
