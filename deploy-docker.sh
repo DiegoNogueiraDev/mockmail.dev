@@ -285,12 +285,38 @@ build_containers() {
     # Build arg com URL da API
     export NEXT_PUBLIC_API_URL="${API_URLS[$ENVIRONMENT]}"
 
+    # Usar docker build diretamente com --network=host para resolver DNS
+    # (next/font precisa acessar fonts.googleapis.com durante o build)
+    log_docker "Usando --network=host para acesso DNS..."
+
     if [ -n "$ONLY_SERVICE" ]; then
         log_docker "Rebuilding apenas: $ONLY_SERVICE"
-        docker_compose build $build_args "$ONLY_SERVICE"
+        # Para serviço específico, usar docker build direto
+        case "$ONLY_SERVICE" in
+            api|api-hml)
+                docker build $build_args --network=host -t "${PROJECT_NAMES[$ENVIRONMENT]}-api-hml" "$PROJECT_ROOT/api"
+                ;;
+            watch|watch-hml)
+                docker build $build_args --network=host \
+                    --build-arg NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" \
+                    -t "${PROJECT_NAMES[$ENVIRONMENT]}-watch-hml" "$PROJECT_ROOT/watch"
+                ;;
+            *)
+                docker_compose build $build_args "$ONLY_SERVICE"
+                ;;
+        esac
     else
         log_docker "Rebuilding todos os serviços..."
-        docker_compose build $build_args
+        # Build API
+        log_docker "Building API..."
+        docker build $build_args --network=host \
+            -t "${PROJECT_NAMES[$ENVIRONMENT]}-api-hml" "$PROJECT_ROOT/api"
+
+        # Build Watch (frontend)
+        log_docker "Building Watch (frontend)..."
+        docker build $build_args --network=host \
+            --build-arg NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" \
+            -t "${PROJECT_NAMES[$ENVIRONMENT]}-watch-hml" "$PROJECT_ROOT/watch"
     fi
 
     log_success "Build concluído!"
