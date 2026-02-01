@@ -49,8 +49,8 @@ export default function EmailsPage() {
     try {
       const response = await api.get<EmailsResponse>(`/api/mail/emails?page=${page}&limit=20`);
       if (response.success && response.data) {
-        setEmails(response.data.data);
-        setTotalPages(response.data.pagination.totalPages);
+        setEmails(response.data);
+        setTotalPages(response.pagination?.totalPages || 1);
       }
     } catch (err) {
       console.error('Failed to fetch emails:', err);

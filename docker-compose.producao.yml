@@ -8,7 +8,6 @@
 # Portas Produção (localhost only para segurança):
 #   MongoDB:    27017
 #   Redis:      6379
-#   PostgreSQL: 5432
 #
 # Uso:
 #   ./deploy-docker.sh --env=producao        # Subir infra
@@ -95,43 +94,6 @@ services:
     labels:
       - "environment=producao"
 
-  # ===========================================================================
-  # PostgreSQL
-  # ===========================================================================
-  postgres:
-    image: postgres:16-alpine
-    container_name: mockmail-postgres
-    restart: always
-    ports:
-      - "127.0.0.1:5432:5432"
-    environment:
-      POSTGRES_USER: mockmail
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD é obrigatório}
-      POSTGRES_DB: mockmail
-      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - mockmail-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mockmail"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-        reservations:
-          memory: 256M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    labels:
-      - "environment=producao"
-
 # =============================================================================
 # VOLUMES
 # =============================================================================
@@ -140,8 +102,6 @@ volumes:
     name: mockmail_mongodb_data
   redis_data:
     name: mockmail_redis_data
-  postgres_data:
-    name: mockmail_postgres_data
 
 # =============================================================================
 # NETWORKS

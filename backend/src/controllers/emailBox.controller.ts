@@ -3,6 +3,13 @@ import EmailBox from "../models/EmailBox";
 import Email from "../models/Email";
 import logger from "../utils/logger";
 import crypto from "crypto";
+import {
+  getFromCache,
+  setInCache,
+  getUserBoxesCacheKey,
+  invalidateUserBoxesCache,
+  CACHE_TTL,
+} from "../services/cache.service";
 
 // Helper to generate random email addresses
 const generateRandomAddress = (domain: string = 'mockmail.dev'): string => {
@@ -25,6 +32,18 @@ export const listBoxes = async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
+
+    // Try to get from cache first
+    const cacheKey = getUserBoxesCacheKey(userId.toString(), page, limit);
+    const cached = await getFromCache<{
+      data: any[];
+      pagination: { page: number; limit: number; total: number; totalPages: number };
+    }>(cacheKey);
+
+    if (cached) {
+      logger.info(`CONTROL-EMAILBOX - Cache HIT for user ${userId} boxes (page ${page})`);
+      return res.status(200).json({ success: true, ...cached });
+    }
 
     const [boxes, total] = await Promise.all([
       EmailBox.find({ userId })
@@ -49,9 +68,7 @@ export const listBoxes = async (req: Request, res: Response) => {
       })
     );
 
-    logger.info(`CONTROL-EMAILBOX - Listed ${boxes.length} boxes for user ${userId}`);
-    res.status(200).json({
-      success: true,
+    const responseData = {
       data: boxesWithCounts,
       pagination: {
         page,
@@ -59,6 +76,15 @@ export const listBoxes = async (req: Request, res: Response) => {
         total,
         totalPages: Math.ceil(total / limit),
       },
+    };
+
+    // Cache the result
+    await setInCache(cacheKey, responseData, CACHE_TTL.MEDIUM);
+
+    logger.info(`CONTROL-EMAILBOX - Listed ${boxes.length} boxes for user ${userId}`);
+    res.status(200).json({
+      success: true,
+      ...responseData,
     });
   } catch (error) {
     logger.error(`CONTROL-EMAILBOX - Error listing boxes: ${(error as Error).message}`);
@@ -144,6 +170,9 @@ export const createBox = async (req: Request, res: Response) => {
 
     await box.save();
 
+    // Invalidate user's boxes cache
+    await invalidateUserBoxesCache(userId.toString());
+
     logger.info(`CONTROL-EMAILBOX - Created box ${address} for user ${userId}`);
     res.status(201).json({
       success: true,
@@ -186,6 +215,9 @@ export const deleteBox = async (req: Request, res: Response) => {
     // Delete the box
     await EmailBox.deleteOne({ _id: id });
 
+    // Invalidate user's boxes cache
+    await invalidateUserBoxesCache(userId.toString());
+
     logger.info(`CONTROL-EMAILBOX - Deleted box ${box.address} and ${deletedEmails.deletedCount} emails for user ${userId}`);
     res.status(200).json({
       success: true,
@@ -218,6 +250,9 @@ export const clearBox = async (req: Request, res: Response) => {
     }
 
     const deletedEmails = await Email.deleteMany({ to: box.address });
+
+    // Invalidate user's boxes cache (email count changed)
+    await invalidateUserBoxesCache(userId.toString());
 
     logger.info(`CONTROL-EMAILBOX - Cleared ${deletedEmails.deletedCount} emails from box ${box.address}`);
     res.status(200).json({

@@ -72,8 +72,8 @@ export default function ApiKeysPage() {
     try {
       const response = await api.get<ApiKeysResponse>(`/api/api-keys?page=${page}&limit=10`);
       if (response.success && response.data) {
-        setApiKeys(response.data.data);
-        setTotalPages(response.data.pagination.totalPages);
+        setApiKeys(response.data);
+        setTotalPages(response.pagination?.totalPages || 1);
       }
     } catch (err) {
       console.error('Failed to fetch API keys:', err);

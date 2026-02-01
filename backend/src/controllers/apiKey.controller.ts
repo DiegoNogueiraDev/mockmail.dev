@@ -9,6 +9,13 @@ import {
   getApiKeyStats,
 } from "../services/apiKey.service";
 import logger from "../utils/logger";
+import {
+  getFromCache,
+  setInCache,
+  getUserApiKeysCacheKey,
+  invalidateUserApiKeysCache,
+  CACHE_TTL,
+} from "../services/cache.service";
 
 /**
  * List all API keys for the authenticated user
@@ -18,6 +25,18 @@ export const listApiKeys = async (req: Request, res: Response) => {
     const userId = req.user?.id;
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+
+    // Try to get from cache first
+    const cacheKey = getUserApiKeysCacheKey(userId!, page, limit);
+    const cached = await getFromCache<{
+      data: any[];
+      pagination: { page: number; limit: number; total: number; totalPages: number };
+    }>(cacheKey);
+
+    if (cached) {
+      logger.info(`APIKEY - Cache HIT for user ${userId} api-keys (page ${page})`);
+      return res.json({ success: true, ...cached });
+    }
 
     const result = await listUserApiKeys(userId!, page, limit);
 
@@ -32,8 +51,7 @@ export const listApiKeys = async (req: Request, res: Response) => {
       })
     );
 
-    res.json({
-      success: true,
+    const responseData = {
       data: keysWithStats,
       pagination: {
         page,
@@ -41,6 +59,14 @@ export const listApiKeys = async (req: Request, res: Response) => {
         total: result.total,
         totalPages: result.totalPages,
       },
+    };
+
+    // Cache the result
+    await setInCache(cacheKey, responseData, CACHE_TTL.MEDIUM);
+
+    res.json({
+      success: true,
+      ...responseData,
     });
   } catch (error) {
     logger.error("Error listing API keys:", error);
@@ -121,6 +147,9 @@ export const createApiKeyHandler = async (req: Request, res: Response) => {
       expiresInDays: expiresInDays ? Math.min(Math.max(expiresInDays, 1), 365) : undefined,
     });
 
+    // Invalidate user's API keys cache
+    await invalidateUserApiKeysCache(userId!);
+
     logger.info(`API key created: ${apiKey.keyPrefix} for user ${userId}`);
 
     // Return API key with the raw key (shown only once!)
@@ -188,6 +217,9 @@ export const updateApiKeyHandler = async (req: Request, res: Response) => {
       });
     }
 
+    // Invalidate user's API keys cache
+    await invalidateUserApiKeysCache(userId!);
+
     res.json({
       success: true,
       data: updatedKey,
@@ -218,6 +250,9 @@ export const revokeApiKeyHandler = async (req: Request, res: Response) => {
       });
     }
 
+    // Invalidate user's API keys cache
+    await invalidateUserApiKeysCache(userId!);
+
     res.json({
       success: true,
       message: "API key revogada com sucesso",
@@ -247,6 +282,9 @@ export const deleteApiKeyHandler = async (req: Request, res: Response) => {
         error: "API key não encontrada",
       });
     }
+
+    // Invalidate user's API keys cache
+    await invalidateUserApiKeysCache(userId!);
 
     res.json({
       success: true,

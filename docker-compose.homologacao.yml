@@ -8,7 +8,6 @@
 # Portas Homologação (diferentes de produção):
 #   MongoDB:    27018
 #   Redis:      6380
-#   PostgreSQL: 5433
 #
 # Uso:
 #   ./deploy-docker.sh --env=homologacao        # Subir infra
@@ -66,31 +65,6 @@ services:
     labels:
       - "environment=homologacao"
 
-  # ===========================================================================
-  # PostgreSQL
-  # ===========================================================================
-  postgres-hml:
-    image: postgres:16-alpine
-    container_name: mockmail-postgres-hml
-    restart: unless-stopped
-    ports:
-      - "5433:5432"
-    environment:
-      POSTGRES_USER: mockmail_hml
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mockmail_hml_2026}
-      POSTGRES_DB: mockmail_hml
-    volumes:
-      - postgres_hml_data:/var/lib/postgresql/data
-    networks:
-      - mockmail-hml-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mockmail_hml"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    labels:
-      - "environment=homologacao"
-
 # =============================================================================
 # VOLUMES
 # =============================================================================
@@ -99,8 +73,6 @@ volumes:
     name: mockmail_mongodb_hml_data
   redis_hml_data:
     name: mockmail_redis_hml_data
-  postgres_hml_data:
-    name: mockmail_postgres_hml_data
 
 # =============================================================================
 # NETWORKS

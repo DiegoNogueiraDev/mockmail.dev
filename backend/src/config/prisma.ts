@@ -1,68 +1,69 @@
 /**
- * Prisma Client Configuration
+ * Prisma Client Configuration - DESATIVADO
  *
- * Singleton pattern to ensure a single database connection instance.
- * Handles development hot-reload scenarios and production optimizations.
+ * Este arquivo foi desativado pois o PostgreSQL foi removido do projeto.
+ * O sistema agora usa exclusivamente MongoDB (Mongoose) para persistência.
+ *
+ * Para reativar no futuro:
+ * 1. Adicionar PostgreSQL ao docker-compose
+ * 2. Descomentar o código abaixo
+ * 3. Adicionar POSTGRES_URI ao .env
+ * 4. Executar: npx prisma migrate deploy
  */
 
-import { PrismaClient, Prisma } from '../generated/prisma';
-import logger from '../utils/logger';
+// import { PrismaClient, Prisma } from '../generated/prisma';
+// import logger from '../utils/logger';
 
-// Declare global variable for development hot-reload
-declare global {
-  // eslint-disable-next-line no-var
-  var prisma: PrismaClient | undefined;
-}
+// declare global {
+//   var prisma: PrismaClient | undefined;
+// }
 
-// Create Prisma client with logging configuration
-const createPrismaClient = (): PrismaClient => {
-  const client = new PrismaClient({
-    log: process.env.NODE_ENV === 'development'
-      ? [
-          { emit: 'event', level: 'query' },
-          { emit: 'event', level: 'error' },
-          { emit: 'event', level: 'warn' },
-        ]
-      : [
-          { emit: 'event', level: 'error' },
-        ],
-  });
+// const createPrismaClient = (): PrismaClient => {
+//   const client = new PrismaClient({
+//     log: process.env.NODE_ENV === 'development'
+//       ? [
+//           { emit: 'event', level: 'query' },
+//           { emit: 'event', level: 'error' },
+//           { emit: 'event', level: 'warn' },
+//         ]
+//       : [
+//           { emit: 'event', level: 'error' },
+//         ],
+//   });
 
-  // Log queries in development
-  if (process.env.NODE_ENV === 'development') {
-    client.$on('query', (e: Prisma.QueryEvent) => {
-      logger.debug(`PRISMA Query: ${e.query}`, {
-        params: e.params,
-        duration: `${e.duration}ms`,
-      });
-    });
-  }
+//   if (process.env.NODE_ENV === 'development') {
+//     client.$on('query', (e: Prisma.QueryEvent) => {
+//       logger.debug(`PRISMA Query: ${e.query}`, {
+//         params: e.params,
+//         duration: `${e.duration}ms`,
+//       });
+//     });
+//   }
 
-  // Log errors
-  client.$on('error', (e: Prisma.LogEvent) => {
-    logger.error('PRISMA Error:', e);
-  });
+//   client.$on('error', (e: Prisma.LogEvent) => {
+//     logger.error('PRISMA Error:', e);
+//   });
 
-  // Log warnings
-  client.$on('warn', (e: Prisma.LogEvent) => {
-    logger.warn('PRISMA Warning:', e);
-  });
+//   client.$on('warn', (e: Prisma.LogEvent) => {
+//     logger.warn('PRISMA Warning:', e);
+//   });
 
-  return client;
-};
+//   return client;
+// };
 
-// Singleton instance
-export const prisma = global.prisma ?? createPrismaClient();
+// export const prisma = global.prisma ?? createPrismaClient();
 
-// Prevent multiple instances in development
-if (process.env.NODE_ENV !== 'production') {
-  global.prisma = prisma;
-}
+// if (process.env.NODE_ENV !== 'production') {
+//   global.prisma = prisma;
+// }
 
-// Graceful shutdown
-process.on('beforeExit', async () => {
-  logger.info('PRISMA: Disconnecting from database...');
-  await prisma.$disconnect();
-});
+// process.on('beforeExit', async () => {
+//   logger.info('PRISMA: Disconnecting from database...');
+//   await prisma.$disconnect();
+// });
 
+// export default prisma;
+
+// Placeholder export para evitar erros de importação
+export const prisma = null;
 export default prisma;

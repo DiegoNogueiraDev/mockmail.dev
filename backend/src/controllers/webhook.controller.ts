@@ -7,6 +7,13 @@ import {
   getWebhookStats,
 } from "../services/webhook.service";
 import logger from "../utils/logger";
+import {
+  getFromCache,
+  setInCache,
+  getUserWebhooksCacheKey,
+  invalidateUserWebhooksCache,
+  CACHE_TTL,
+} from "../services/cache.service";
 
 /**
  * List all webhooks for the authenticated user
@@ -17,6 +24,18 @@ export const listWebhooks = async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
     const skip = (page - 1) * limit;
+
+    // Try to get from cache first
+    const cacheKey = getUserWebhooksCacheKey(userId!, page, limit);
+    const cached = await getFromCache<{
+      data: any[];
+      pagination: { page: number; limit: number; total: number; totalPages: number };
+    }>(cacheKey);
+
+    if (cached) {
+      logger.info(`WEBHOOK - Cache HIT for user ${userId} webhooks (page ${page})`);
+      return res.json({ success: true, ...cached });
+    }
 
     const [webhooks, total] = await Promise.all([
       Webhook.find({ userId })
@@ -39,8 +58,7 @@ export const listWebhooks = async (req: Request, res: Response) => {
       })
     );
 
-    res.json({
-      success: true,
+    const responseData = {
       data: webhooksWithStats,
       pagination: {
         page,
@@ -48,6 +66,14 @@ export const listWebhooks = async (req: Request, res: Response) => {
         total,
         totalPages: Math.ceil(total / limit),
       },
+    };
+
+    // Cache the result
+    await setInCache(cacheKey, responseData, CACHE_TTL.MEDIUM);
+
+    res.json({
+      success: true,
+      ...responseData,
     });
   } catch (error) {
     logger.error("Error listing webhooks:", error);
@@ -155,6 +181,9 @@ export const createWebhook = async (req: Request, res: Response) => {
       retryCount: Math.min(Math.max(retryCount || 3, 0), 10),
     });
 
+    // Invalidate user's webhooks cache
+    await invalidateUserWebhooksCache(userId!);
+
     logger.info(`Webhook created: ${webhook.name} for user ${userId}`);
 
     // Return webhook with secret (only on creation)
@@ -250,6 +279,9 @@ export const updateWebhook = async (req: Request, res: Response) => {
       { new: true }
     ).select("-secret");
 
+    // Invalidate user's webhooks cache
+    await invalidateUserWebhooksCache(userId!);
+
     logger.info(`Webhook updated: ${updatedWebhook?.name}`);
 
     res.json({
@@ -284,6 +316,9 @@ export const deleteWebhook = async (req: Request, res: Response) => {
 
     // Delete associated deliveries
     await WebhookDelivery.deleteMany({ webhookId: id });
+
+    // Invalidate user's webhooks cache
+    await invalidateUserWebhooksCache(userId!);
 
     logger.info(`Webhook deleted: ${webhook.name}`);
 

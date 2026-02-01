@@ -11,6 +11,14 @@ import { getLatestEmailFromBox } from "../services/email.service";
 import { extractEmail as extractEmailUtil } from "../utils/emailParser";
 import Email from "../models/Email";
 import EmailBox from "../models/EmailBox";
+import {
+  getFromCache,
+  setInCache,
+  getUserEmailsCacheKey,
+  invalidateUserEmailsCache,
+  invalidateUserBoxesCache,
+  CACHE_TTL,
+} from "../services/cache.service";
 
 // Function to extract email from `from` field
 const extractEmail = (rawFrom: string): string => {
@@ -263,6 +271,18 @@ export const listEmails = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
+    // Try to get from cache first
+    const cacheKey = getUserEmailsCacheKey(userId.toString(), page, limit);
+    const cached = await getFromCache<{
+      data: any[];
+      pagination: { page: number; limit: number; total: number; totalPages: number };
+    }>(cacheKey);
+
+    if (cached) {
+      logger.info(`CONTROL-MAIL - Cache HIT for user ${userId} emails (page ${page})`);
+      return res.status(200).json({ success: true, ...cached });
+    }
+
     // Get user's boxes
     const userBoxes = await EmailBox.find({ userId }).select('address').lean();
     const boxAddresses = userBoxes.map(box => box.address);
@@ -294,9 +314,7 @@ export const listEmails = async (req: Request, res: Response) => {
       boxAddress: email.to,
     }));
 
-    logger.info(`CONTROL-MAIL - Listed ${emails.length} emails for user ${userId}`);
-    res.status(200).json({
-      success: true,
+    const responseData = {
       data: formattedEmails,
       pagination: {
         page,
@@ -304,6 +322,15 @@ export const listEmails = async (req: Request, res: Response) => {
         total,
         totalPages: Math.ceil(total / limit),
       },
+    };
+
+    // Cache the result
+    await setInCache(cacheKey, responseData, CACHE_TTL.SHORT);
+
+    logger.info(`CONTROL-MAIL - Listed ${emails.length} emails for user ${userId}`);
+    res.status(200).json({
+      success: true,
+      ...responseData,
     });
   } catch (error) {
     logger.error(`CONTROL-MAIL - Error listing emails: ${(error as Error).message}`);
@@ -385,6 +412,12 @@ export const deleteEmail = async (req: Request, res: Response) => {
     if (!email) {
       return res.status(404).json({ success: false, message: "Email not found" });
     }
+
+    // Invalidate user's emails and boxes cache (email count changed)
+    await Promise.all([
+      invalidateUserEmailsCache(userId.toString()),
+      invalidateUserBoxesCache(userId.toString()),
+    ]);
 
     logger.info(`CONTROL-MAIL - Deleted email ${id} for user ${userId}`);
     res.status(200).json({

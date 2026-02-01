@@ -22,11 +22,6 @@ if (!process.env.NODE_ENV) {
   );
 }
 
-if (!process.env.POSTGRES_URI) {
-  throw new Error(
-    "CONFIG-ENV - POSTGRES_URI não está configurada nas variáveis de ambiente"
-  );
-}
 if (!process.env.PORT) {
   throw new Error(
     "CONFIG-ENV - PORT não está configurada nas variáveis de ambiente"

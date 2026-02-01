@@ -1,0 +1,117 @@
+import { Router, Request, Response } from "express";
+import { authMiddleware } from "../middlewares/authMiddleware";
+import EmailBox from "../models/EmailBox";
+import Email from "../models/Email";
+import Webhook from "../models/Webhook";
+import logger from "../utils/logger";
+
+const router = Router();
+
+// All routes require authentication
+router.use(authMiddleware);
+
+/**
+ * @route GET /dashboard/stats
+ * @desc Get dashboard statistics for the authenticated user
+ * @access Private
+ */
+router.get("/stats", async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userId = user?._id || user?.id;
+
+    logger.info(`ROUTE-DASHBOARD - GET /dashboard/stats - User: ${user?.email}`);
+
+    // Get counts for the user
+    const [totalBoxes, totalEmails, emailsToday, activeWebhooks] = await Promise.all([
+      EmailBox.countDocuments({ userId }),
+      Email.countDocuments({ userId }),
+      Email.countDocuments({
+        userId,
+        createdAt: {
+          $gte: new Date(new Date().setHours(0, 0, 0, 0)),
+        },
+      }),
+      Webhook.countDocuments({ userId, isActive: true }),
+    ]);
+
+    // Calculate percent change (comparing to yesterday)
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+
+    const [boxesYesterday, emailsYesterday] = await Promise.all([
+      EmailBox.countDocuments({
+        userId,
+        createdAt: { $lt: new Date(new Date().setHours(0, 0, 0, 0)) },
+      }),
+      Email.countDocuments({
+        userId,
+        createdAt: {
+          $gte: yesterday,
+          $lt: new Date(new Date().setHours(0, 0, 0, 0)),
+        },
+      }),
+    ]);
+
+    const boxesChange = boxesYesterday > 0 
+      ? Math.round(((totalBoxes - boxesYesterday) / boxesYesterday) * 100) 
+      : 0;
+    const emailsChange = emailsYesterday > 0 
+      ? Math.round(((emailsToday - emailsYesterday) / emailsYesterday) * 100) 
+      : 0;
+
+    res.json({
+      totalBoxes,
+      totalEmails,
+      emailsToday,
+      activeWebhooks,
+      percentChange: {
+        boxes: boxesChange,
+        emails: emailsChange,
+      },
+    });
+  } catch (error) {
+    logger.error(`ROUTE-DASHBOARD - GET /dashboard/stats - Error: ${(error as Error).message}`);
+    res.status(500).json({ error: "Failed to fetch dashboard stats" });
+  }
+});
+
+/**
+ * @route GET /dashboard/recent-emails
+ * @desc Get recent emails for the authenticated user
+ * @access Private
+ */
+router.get("/recent-emails", async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userId = user?._id || user?.id;
+    const limit = parseInt(req.query.limit as string) || 5;
+
+    logger.info(`ROUTE-DASHBOARD - GET /dashboard/recent-emails - User: ${user?.email}`);
+
+    // Get recent emails with box information
+    const recentEmails = await Email.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate('emailBoxId', 'address domain')
+      .lean();
+
+    const formattedEmails = recentEmails.map((email: any) => ({
+      id: email._id.toString(),
+      from: email.from || 'Unknown',
+      subject: email.subject || '(No subject)',
+      receivedAt: email.createdAt?.toISOString() || new Date().toISOString(),
+      boxAddress: email.emailBoxId 
+        ? `${email.emailBoxId.address}@${email.emailBoxId.domain}`
+        : 'Unknown box',
+    }));
+
+    res.json(formattedEmails);
+  } catch (error) {
+    logger.error(`ROUTE-DASHBOARD - GET /dashboard/recent-emails - Error: ${(error as Error).message}`);
+    res.status(500).json({ error: "Failed to fetch recent emails" });
+  }
+});
+
+export default router;

@@ -23,8 +23,12 @@ export const authMiddleware = async (
   res: Response,
   next: NextFunction
 ) => {
-  // Extraindo o token do cabeçalho Authorization
-  const token = req.header("Authorization")?.replace("Bearer ", "");
+  // Nome do cookie de access token (deve corresponder ao definido no auth.controller)
+  const ACCESS_TOKEN_COOKIE = "mockmail_access_token";
+
+  // Extraindo o token do cookie httpOnly ou do cabeçalho Authorization
+  const token = req.cookies?.[ACCESS_TOKEN_COOKIE] || 
+    req.header("Authorization")?.replace("Bearer ", "");
 
   // Verificando se o token foi enviado
   if (!token) {

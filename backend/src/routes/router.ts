@@ -8,6 +8,7 @@ import webhookRoutes from "./webhook.routes";
 import apiKeyRoutes from "./apiKey.routes";
 import profileRoutes from "./profile.routes";
 import { csrfTokenHandler, csrfProtection } from "../middlewares/csrfMiddleware";
+import dashboardRoutes from "./dashboard.routes";
 
 const router = Router();
 
@@ -86,6 +87,18 @@ try {
 } catch (error) {
   logger.error(
     `ROUTE-ROUTER - Erro ao carregar rotas de perfil: ${(error as Error).message}`
+  );
+}
+
+try {
+  // Agrupando rotas de dashboard
+  router.use("/dashboard", dashboardRoutes);
+  logger.info(
+    "ROUTE-ROUTER - Rotas de dashboard (/dashboard) carregadas com sucesso."
+  );
+} catch (error) {
+  logger.error(
+    `ROUTE-ROUTER - Erro ao carregar rotas de dashboard: ${(error as Error).message}`
   );
 }
 
