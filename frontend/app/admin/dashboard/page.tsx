@@ -88,7 +88,7 @@ export default function DashboardPage() {
       // Usage response comes directly from backend (not wrapped in {success, data})
       // Handle both wrapped and unwrapped formats
       if (usageRes) {
-        const usageResponse = usageRes as { data?: DailyUsage } & DailyUsage;
+        const usageResponse = usageRes as unknown as { data?: DailyUsage } & DailyUsage;
         const usage = usageResponse.data || usageResponse;
         if (usage && typeof usage.used === 'number') {
           setDailyUsage(usage as DailyUsage);
