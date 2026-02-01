@@ -244,16 +244,8 @@ check_docker_infra() {
         log_warning "Redis: Não encontrado"
     fi
 
-    # Verificar PostgreSQL
-    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "mockmail.*postgres"; then
-        postgres_ok=true
-        log_success "PostgreSQL: Rodando"
-    else
-        log_warning "PostgreSQL: Não encontrado"
-    fi
-
     # Se algum serviço não estiver rodando, avisar
-    if [ "$mongo_ok" = false ] || [ "$redis_ok" = false ] || [ "$postgres_ok" = false ]; then
+    if [ "$mongo_ok" = false ] || [ "$redis_ok" = false ]; then
         echo ""
         log_warning "Infraestrutura Docker não está completa!"
         log_info "Execute primeiro: ./deploy-docker.sh --env=$ENVIRONMENT"
