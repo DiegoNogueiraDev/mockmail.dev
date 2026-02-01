@@ -188,10 +188,11 @@ echo ""
 # Criar arquivo temporário com o comando MongoDB (evita problemas de escape)
 MONGO_SCRIPT=$(mktemp)
 cat > "$MONGO_SCRIPT" << 'MONGOEOF'
-db.users.updateOne(
+const result = db.users.updateOne(
   { email: "USER_EMAIL_PLACEHOLDER" },
   { $set: { password: "HASH_PLACEHOLDER" } }
-)
+);
+printjson(result);
 MONGOEOF
 
 # Substituir placeholders
