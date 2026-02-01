@@ -8,7 +8,7 @@
     "start:processor": "node dist/emailProcessor.js",
     "dev": "nodemon src/server.ts",
     "dev:processor": "nodemon src/emailProcessor.ts",
-    "build": "prisma generate && tsc",
+    "build": "tsc",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -32,8 +32,6 @@
   },
   "homepage": "https://github.com/DiegoNogueiraDev/mockmail.dev#readme",
   "dependencies": {
-    "@prisma/client": "^7.3.0",
-    "@types/cheerio": "^0.22.35",
     "bcrypt": "^5.1.1",
     "cheerio": "^1.0.0",
     "cookie-parser": "^1.4.7",
@@ -50,13 +48,11 @@
     "mockmail.dev": "file:",
     "mongoose": "^8.9.5",
     "node-cron": "^3.0.3",
-    "pg": "^8.11.3",
-    "prisma": "^7.3.0",
     "rate-limit-redis": "^4.2.0",
     "redis": "^5.10.0",
     "sanitize-html": "^2.14.0",
-    "sequelize": "^6.37.5",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
