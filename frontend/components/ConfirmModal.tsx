@@ -208,18 +208,22 @@ export function useConfirmModal() {
   }, []);
 
   const handleClose = useCallback(() => {
-    if (modalState.resolve) {
-      modalState.resolve(false);
-    }
-    setModalState((prev) => ({ ...prev, isOpen: false, resolve: null }));
-  }, [modalState.resolve]);
+    setModalState((prev) => {
+      if (prev.resolve) {
+        prev.resolve(false);
+      }
+      return { ...prev, isOpen: false, resolve: null };
+    });
+  }, []);
 
   const handleConfirm = useCallback(() => {
-    if (modalState.resolve) {
-      modalState.resolve(true);
-    }
-    setModalState((prev) => ({ ...prev, isOpen: false, resolve: null }));
-  }, [modalState.resolve]);
+    setModalState((prev) => {
+      if (prev.resolve) {
+        prev.resolve(true);
+      }
+      return { ...prev, isOpen: false, resolve: null };
+    });
+  }, []);
 
   const ConfirmModalComponent = useCallback(() => (
     <ConfirmModal
