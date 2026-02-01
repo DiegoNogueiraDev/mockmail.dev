@@ -40,11 +40,11 @@ function getDailyLimitKey(userId: string): string {
  * - Headers informativos: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
  * - Falha silenciosa se Redis não disponível (permite requisição)
  */
-export async function dailyUserLimitMiddleware(
+export function dailyUserLimitMiddleware(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-): Promise<void> {
+): void {
   // Extrai userId do req.user (compatível com authMiddleware)
   const userId = req.user?.id || req.user?._id?.toString();
 
