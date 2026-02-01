@@ -443,96 +443,43 @@ build_frontend() {
 # FUNÇÕES DE CONFIGURAÇÃO DO SERVIDOR
 # =============================================================================
 
-# Setup completo do Email Processor (venv, deps, configs)
+# Setup do Email Processor (TypeScript - agora via PM2)
 setup_email_processor() {
-    log_step "Configurando Email Processor"
-
-    if [ ! -d "$EMAIL_PROCESSOR_DIR" ]; then
-        log_warning "Diretório email-processor não encontrado, pulando..."
-        return 0
-    fi
+    log_step "Configurando Email Processor (TypeScript)"
 
     if [ "$DRY_RUN" = true ]; then
         log_info "[DRY RUN] Configurando email processor..."
         return 0
     fi
 
-    local PROCESSOR_DEST="/opt/mockmail"
-    local PROCESSOR_ENV="$EMAIL_PROCESSOR_DIR/.env.$ENVIRONMENT"
-
-    # Verificar se usuário email-processor existe
-    if ! id "email-processor" &>/dev/null; then
-        log_warning "Usuário email-processor não existe. Criando..."
-        sudo useradd -r -s /bin/false -d /opt/mockmail email-processor 2>/dev/null || {
-            log_warning "Não foi possível criar usuário. Usando root."
-        }
-    else
-        log_info "Usuário email-processor: OK"
+    # Criar diretório de logs se não existir
+    if [ ! -d "/var/log/mockmail" ]; then
+        sudo mkdir -p /var/log/mockmail
+        sudo chmod 755 /var/log/mockmail
+        log_info "Diretório /var/log/mockmail criado"
     fi
 
-    # Criar diretório de destino se não existir
-    if [ ! -d "$PROCESSOR_DEST" ]; then
-        sudo mkdir -p "$PROCESSOR_DEST"
-        sudo chown email-processor:email-processor "$PROCESSOR_DEST" 2>/dev/null || true
-        log_info "Diretório $PROCESSOR_DEST criado"
-    fi
-
-    # Criar diretório de logs
-    sudo mkdir -p /var/log/mockmail
-    sudo chown email-processor:email-processor /var/log/mockmail 2>/dev/null || true
-
-    # Criar FIFO se não existir
+    # Criar FIFO se não existir (usado pelo Postfix)
     if [ ! -p /var/spool/email-processor ]; then
         sudo mkfifo /var/spool/email-processor 2>/dev/null || true
-        sudo chown email-processor:email-processor /var/spool/email-processor 2>/dev/null || true
+        sudo chmod 666 /var/spool/email-processor 2>/dev/null || true
         log_info "FIFO criado em /var/spool/email-processor"
     fi
 
-    # Copiar arquivos do processor
-    cd "$EMAIL_PROCESSOR_DIR"
-    
-    if [ -f "email_processor.py" ]; then
-        sudo cp email_processor.py "$PROCESSOR_DEST/"
-        log_success "email_processor.py copiado"
-    fi
-
-    if [ -f "requirements.txt" ]; then
-        sudo cp requirements.txt "$PROCESSOR_DEST/"
-        log_success "requirements.txt copiado"
-    fi
-
-    if [ -f "email-handler.sh" ]; then
-        sudo cp email-handler.sh /usr/local/bin/
+    # Copiar email-handler.sh (ainda necessário para Postfix)
+    if [ -f "$EMAIL_PROCESSOR_DIR/email-handler.sh" ]; then
+        sudo cp "$EMAIL_PROCESSOR_DIR/email-handler.sh" /usr/local/bin/
         sudo chmod +x /usr/local/bin/email-handler.sh
         log_success "email-handler.sh instalado"
     fi
 
-    # Copiar .env do ambiente
-    if [ -f "$PROCESSOR_ENV" ]; then
-        sudo cp "$PROCESSOR_ENV" "$PROCESSOR_DEST/.env"
-        log_success "Email processor .env copiado de .env.$ENVIRONMENT"
-    else
-        log_warning "Template email-processor/.env.$ENVIRONMENT não encontrado"
+    # Verificar se o build do processor existe
+    if [ ! -f "$BACKEND_DIR/dist/emailProcessor.js" ]; then
+        log_error "dist/emailProcessor.js não encontrado! Verifique o build."
+        return 1
     fi
 
-    # Criar/atualizar virtualenv e instalar dependências
-    if [ -f "$PROCESSOR_DEST/requirements.txt" ]; then
-        log_info "Configurando virtualenv Python..."
-        
-        # Criar venv se não existir
-        if [ ! -d "$PROCESSOR_DEST/venv" ]; then
-            sudo python3 -m venv "$PROCESSOR_DEST/venv"
-            log_info "Virtualenv criado"
-        fi
-
-        # Instalar/atualizar dependências
-        sudo "$PROCESSOR_DEST/venv/bin/pip" install --upgrade pip -q
-        sudo "$PROCESSOR_DEST/venv/bin/pip" install -r "$PROCESSOR_DEST/requirements.txt" -q
-        log_success "Dependências Python instaladas"
-    fi
-
-    # Ajustar permissões
-    sudo chown -R email-processor:email-processor "$PROCESSOR_DEST" 2>/dev/null || true
+    log_success "Email Processor TypeScript configurado (será iniciado via PM2)"
 }
 
 # Sincronizar configurações do servidor (Postfix, HAProxy, Systemd)
@@ -797,11 +744,12 @@ enhanced_health_check() {
         ((WARNINGS++))
     fi
 
-    # 6. Verificar Email Processor
-    if sudo systemctl is-active --quiet email-processor 2>/dev/null; then
-        log_success "Email Processor: Ativo"
+    # 6. Verificar Email Processor (agora via PM2)
+    local processor_status=$(pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"mockmail-processor${env_suffix}\") | .pm2_env.status" 2>/dev/null || echo "unknown")
+    if [ "$processor_status" = "online" ]; then
+        log_success "Email Processor (PM2): online"
     else
-        log_warning "Email Processor: Não está ativo"
+        log_warning "Email Processor (PM2): $processor_status"
         ((WARNINGS++))
     fi
 
@@ -846,6 +794,9 @@ setup_ecosystem() {
         env_suffix="-hml"
     fi
 
+    # Detectar caminho do Node.js
+    local node_path=$(which node)
+
     cat > ecosystem.config.js << EOF
 module.exports = {
   apps: [
@@ -853,6 +804,7 @@ module.exports = {
       name: 'mockmail-api${env_suffix}',
       cwd: './backend',
       script: 'dist/server.js',
+      interpreter: '${node_path}',
       instances: 1,
       autorestart: true,
       watch: false,
@@ -875,12 +827,29 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: ${frontend_port}
       }
+    },
+    {
+      name: 'mockmail-processor${env_suffix}',
+      cwd: './backend',
+      script: 'dist/emailProcessor.js',
+      interpreter: '${node_path}',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '256M',
+      env: {
+        NODE_ENV: 'production',
+        MOCKMAIL_FIFO_PATH: '/var/spool/email-processor',
+        MOCKMAIL_OUTPUT_FILE: '/var/log/mockmail/emails.json',
+        MOCKMAIL_POLL_INTERVAL: '1000',
+        MOCKMAIL_DEBUG: 'true'
+      }
     }
   ]
 };
 EOF
 
-    log_success "ecosystem.config.js criado (portas: API=$api_port, Frontend=$frontend_port)"
+    log_success "ecosystem.config.js criado (API=$api_port, Frontend=$frontend_port, Processor=TypeScript)"
 }
 
 # Reiniciar serviços PM2
@@ -902,6 +871,7 @@ restart_services() {
     # Parar serviços antigos se existirem
     pm2 delete "mockmail-api${env_suffix}" 2>/dev/null || true
     pm2 delete "mockmail-frontend${env_suffix}" 2>/dev/null || true
+    pm2 delete "mockmail-processor${env_suffix}" 2>/dev/null || true
 
     # Iniciar serviços
     log_info "Iniciando serviços..."
@@ -913,21 +883,28 @@ restart_services() {
     log_success "Serviços PM2 iniciados"
 }
 
-# Reiniciar Email Processor
-restart_email_processor() {
-    log_step "Reiniciando Email Processor"
+# Parar processadores Python (systemd) - agora usamos TypeScript via PM2
+stop_python_processors() {
+    log_step "Parando processadores Python (migração para TypeScript)"
 
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY RUN] Reiniciando email-processor..."
+        log_info "[DRY RUN] Parando processadores Python..."
         return 0
     fi
 
-    if sudo systemctl is-active --quiet email-processor 2>/dev/null; then
-        sudo systemctl restart email-processor
-        log_success "Email processor reiniciado"
-    else
-        log_warning "Email processor não está rodando como serviço"
-    fi
+    # Parar e desabilitar processadores Python se estiverem rodando
+    local services=("email-processor" "mockmail-email-processor")
+    
+    for service in "${services[@]}"; do
+        if sudo systemctl is-active --quiet "$service" 2>/dev/null; then
+            log_info "Parando $service.service..."
+            sudo systemctl stop "$service" 2>/dev/null || true
+            sudo systemctl disable "$service" 2>/dev/null || true
+            log_success "$service.service parado e desabilitado"
+        fi
+    done
+
+    log_info "Processador de emails agora roda via PM2 (TypeScript)"
 }
 
 # Exibir resumo
@@ -1013,7 +990,7 @@ setup_email_processor
 sync_server_configs
 setup_ecosystem
 restart_services
-restart_email_processor
+stop_python_processors
 
 # Aguardar estabilização
 log_info "Aguardando estabilização dos serviços..."
