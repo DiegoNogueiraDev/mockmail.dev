@@ -844,12 +844,15 @@ setup_ecosystem() {
     # Detectar caminho do Node.js
     local node_path=$(which node)
 
-    # Verificar se o processor único já está rodando
+    # Verificar se o processor único já está rodando E online
     # O processor é único e atende todos os ambientes
     local processor_running=false
-    if pm2 jlist 2>/dev/null | jq -e '.[] | select(.name=="mockmail-processor")' &>/dev/null; then
+    local processor_status=$(pm2 jlist 2>/dev/null | jq -r '.[] | select(.name=="mockmail-processor") | .pm2_env.status' 2>/dev/null)
+    if [ "$processor_status" = "online" ]; then
         processor_running=true
         log_info "Email Processor já está rodando (único para todos os ambientes)"
+    else
+        log_info "Email Processor não encontrado ou não está online, será criado"
     fi
 
     # Criar ecosystem.config.js SEM o processor se ele já estiver rodando
