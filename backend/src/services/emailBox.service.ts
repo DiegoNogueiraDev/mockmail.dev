@@ -43,6 +43,39 @@ export const findOrCreateEmailBox = async (address: string, userId: string) => {
   }
 };
 
+
+/**
+ * Busca uma caixa de e-mail pelo endereço (para uso no email-processor).
+ * Retorna o EmailBox com o userId populado se encontrado.
+ *
+ * @param address - Endereço da caixa de e-mail
+ * @returns O EmailBox encontrado ou null
+ */
+export const findEmailBoxByAddress = async (address: string) => {
+  try {
+    const emailBox = await EmailBox.findOne({ address }).populate("userId");
+
+    if (emailBox) {
+      logger.info(
+        `SERVICE-EMAILBOX - Caixa de e-mail encontrada: ${address}`
+      );
+    } else {
+      logger.warn(
+        `SERVICE-EMAILBOX - Caixa de e-mail não encontrada: ${address}`
+      );
+    }
+
+    return emailBox;
+  } catch (error) {
+    logger.error(
+      `SERVICE-EMAILBOX - Erro ao buscar caixa de e-mail: ${
+        (error as Error).message
+      }`
+    );
+    throw new Error("SERVICE-EMAILBOX - Erro interno ao buscar caixa de e-mail");
+  }
+};
+
 // Função para buscar o e-mail mais novo por assunto
 export const getLatestEmailBySubjectService = async (
   userEmail: string,

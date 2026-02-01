@@ -78,3 +78,19 @@ export const extractEmailWithLogging = (input: string): { email: string; origina
     originalFormat: format
   };
 };
+
+
+/**
+ * Extrai token do assunto do email
+ * Procura por padrão "Token: XXXXXX" no assunto
+ *
+ * @param subject - Assunto do email
+ * @returns - Token extraído ou assunto original se não encontrar
+ */
+export const extractTokenSubject = (subject: string): string => {
+  const match = subject.match(/Token:\s*([A-Z0-9]+)/i);
+  if (!match) {
+    return subject; // Retorna o subject original se não encontrar o padrão
+  }
+  return match[1]; // Retorna apenas o token (ex: QRGSNX)
+};
