@@ -103,9 +103,9 @@ export default function WebhookDetailPage() {
     setError(null);
 
     try {
-      const response = await api.get<{ success: boolean; data: WebhookDetail }>(`/api/webhooks/${webhookId}`);
+      const response = await api.get<WebhookDetail>(`/api/webhooks/${webhookId}`);
       if (response.success && response.data) {
-        setWebhook(response.data.data);
+        setWebhook(response.data);
       } else {
         setError('Webhook não encontrado');
       }
@@ -136,11 +136,11 @@ export default function WebhookDetailPage() {
   const handleTest = async () => {
     setTesting(true);
     try {
-      const response = await api.post<{ success: boolean; data: { success: boolean; responseCode?: number; duration?: number; error?: string }; message?: string }>(`/api/webhooks/${webhookId}/test`);
-      if (response.data?.data?.success) {
-        toast.success(`Teste bem-sucedido! (${response.data.data.duration}ms)`);
+      const response = await api.post<{ success: boolean; responseCode?: number; duration?: number; error?: string }>(`/api/webhooks/${webhookId}/test`);
+      if (response.data?.success) {
+        toast.success(`Teste bem-sucedido! (${response.data.duration}ms)`);
       } else {
-        toast.error(response.data?.message || 'Falha no teste');
+        toast.error(response.message || 'Falha no teste');
       }
       fetchWebhook();
     } catch {
@@ -157,9 +157,9 @@ export default function WebhookDetailPage() {
 
     setRegenerating(true);
     try {
-      const response = await api.post<{ success: boolean; data: { secret: string } }>(`/api/webhooks/${webhookId}/regenerate-secret`);
+      const response = await api.post<{ secret: string }>(`/api/webhooks/${webhookId}/regenerate-secret`);
       if (response.success && response.data) {
-        setWebhook((prev) => prev ? { ...prev, secret: response.data!.data.secret } : null);
+        setWebhook((prev) => prev ? { ...prev, secret: response.data!.secret } : null);
         setShowSecret(true);
         toast.success('Secret regenerado! Atualize suas integrações.');
       } else {

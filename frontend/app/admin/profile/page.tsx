@@ -77,10 +77,10 @@ export default function ProfilePage() {
     setError(null);
 
     try {
-      const response = await api.get<{ success: boolean; data: ProfileData }>('/api/profile');
+      const response = await api.get<ProfileData>('/api/profile');
       if (response.success && response.data) {
-        setProfile(response.data.data);
-        setNewName(response.data.data.name);
+        setProfile(response.data);
+        setNewName(response.data.name);
       }
     } catch (err) {
       console.error('Failed to fetch profile:', err);
@@ -92,9 +92,9 @@ export default function ProfilePage() {
 
   const fetchPasswordRequirements = async () => {
     try {
-      const response = await api.get<{ success: boolean; data: PasswordRequirements }>('/api/profile/password-requirements');
+      const response = await api.get<PasswordRequirements>('/api/profile/password-requirements');
       if (response.success && response.data) {
-        setPasswordRequirements(response.data.data);
+        setPasswordRequirements(response.data);
       }
     } catch (err) {
       console.error('Failed to fetch password requirements:', err);

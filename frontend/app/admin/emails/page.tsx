@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import Link from 'next/link';
 import { api } from '@/lib/apiClient';
 import {
@@ -40,15 +41,20 @@ export default function EmailsPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const pageRef = useRef(1);
 
-  const fetchEmails = async () => {
+  // Fetch inicial ou refresh - reseta a lista
+  const fetchEmails = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setIsInitialLoad(true);
+    pageRef.current = 1;
+    setPage(1);
 
     try {
-      const response = await api.get<EmailsData>(`/api/mail/emails?page=${page}&limit=20`);
+      const response = await api.get<EmailsData>(`/api/mail/emails?page=1&limit=20`);
       if (response.success) {
-        // API retorna { success, data: [...], pagination: {...} } diretamente
         const apiResponse = response as unknown as { success: boolean; data: Email[]; pagination: { totalPages: number } };
         setEmails(apiResponse.data || []);
         setTotalPages(apiResponse.pagination?.totalPages || 1);
@@ -57,13 +63,39 @@ export default function EmailsPage() {
       setError('Não foi possível carregar os emails');
     } finally {
       setLoading(false);
+      setIsInitialLoad(false);
     }
-  };
+  }, []);
+
+  // Fetch para carregar mais itens (infinite scroll)
+  const loadMoreEmails = useCallback(async () => {
+    const nextPage = pageRef.current + 1;
+    
+    try {
+      const response = await api.get<EmailsData>(`/api/mail/emails?page=${nextPage}&limit=20`);
+      if (response.success) {
+        const apiResponse = response as unknown as { success: boolean; data: Email[]; pagination: { totalPages: number } };
+        setEmails(prev => [...prev, ...(apiResponse.data || [])]);
+        setTotalPages(apiResponse.pagination?.totalPages || 1);
+        pageRef.current = nextPage;
+        setPage(nextPage);
+      }
+    } catch {
+      // Silently fail on load more - user can refresh
+    }
+  }, []);
+
+  // Hook de infinite scroll
+  const { sentinelRef, isLoadingMore } = useInfiniteScroll(
+    loadMoreEmails,
+    page < totalPages,
+    { threshold: 200, disabled: loading || isInitialLoad }
+  );
 
   useEffect(() => {
     fetchEmails();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, []);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir este email?')) {
@@ -219,27 +251,26 @@ export default function EmailsPage() {
         )}
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2" data-testid="emails-pagination">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="btn-secondary btn-sm disabled:opacity-50"
-          >
-            Anterior
-          </button>
-          <span className="text-sm text-gray-600">
-            Página {page} de {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="btn-secondary btn-sm disabled:opacity-50"
-          >
-            Próxima
-          </button>
+      {/* Infinite Scroll Sentinel */}
+      <div 
+        ref={sentinelRef} 
+        className="h-4" 
+        data-testid="emails-sentinel"
+      />
+      
+      {/* Loading More Indicator */}
+      {isLoadingMore && (
+        <div className="flex items-center justify-center py-4 gap-2 text-gray-500">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Carregando mais emails...</span>
         </div>
+      )}
+      
+      {/* End of List Indicator */}
+      {!loading && !isLoadingMore && page >= totalPages && emails.length > 0 && (
+        <p className="text-center text-sm text-gray-400 py-4">
+          Fim da lista • {emails.length} email{emails.length !== 1 ? 's' : ''} carregado{emails.length !== 1 ? 's' : ''}
+        </p>
       )}
     </div>
   );

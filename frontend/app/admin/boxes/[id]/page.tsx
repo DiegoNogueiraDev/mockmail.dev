@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/apiClient';
@@ -34,15 +35,7 @@ interface Email {
   read: boolean;
 }
 
-interface EmailsData {
-  data: Email[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-}
+// Interface removida - API retorna data e pagination no nível raiz
 
 export default function BoxDetailPage() {
   const params = useParams();
@@ -59,6 +52,8 @@ export default function BoxDetailPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [clearing, setClearing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const pageRef = useRef(1);
 
   const fetchBox = async () => {
     try {
@@ -73,22 +68,54 @@ export default function BoxDetailPage() {
     }
   };
 
-  const fetchEmails = async () => {
+  // Fetch inicial ou refresh - reseta a lista de emails
+  const fetchEmails = useCallback(async () => {
     setEmailsLoading(true);
+    setIsInitialLoad(true);
+    pageRef.current = 1;
+    setPage(1);
+    
     try {
-      const response = await api.get<EmailsData>(`/api/boxes/${boxId}/emails?page=${page}&limit=20`);
-      if (response.success && response.data) {
-        // Garante que emails seja sempre um array, mesmo se a API retornar undefined
-        setEmails(response.data.data || []);
-        setTotalPages(response.data.pagination?.totalPages || 1);
+      const response = await api.get<Email[]>(`/api/boxes/${boxId}/emails?page=1&limit=20`);
+      const apiResponse = response as unknown as { success: boolean; data: Email[]; pagination: { totalPages: number } };
+      
+      if (apiResponse.success) {
+        setEmails(apiResponse.data || []);
+        setTotalPages(apiResponse.pagination?.totalPages || 1);
       }
     } catch {
-      // Error fetching emails - mantém estado anterior ou array vazio
       setEmails([]);
     } finally {
       setEmailsLoading(false);
+      setIsInitialLoad(false);
     }
-  };
+  }, [boxId]);
+
+  // Fetch para carregar mais emails (infinite scroll)
+  const loadMoreEmails = useCallback(async () => {
+    const nextPage = pageRef.current + 1;
+    
+    try {
+      const response = await api.get<Email[]>(`/api/boxes/${boxId}/emails?page=${nextPage}&limit=20`);
+      const apiResponse = response as unknown as { success: boolean; data: Email[]; pagination: { totalPages: number } };
+      
+      if (apiResponse.success) {
+        setEmails(prev => [...prev, ...(apiResponse.data || [])]);
+        setTotalPages(apiResponse.pagination?.totalPages || 1);
+        pageRef.current = nextPage;
+        setPage(nextPage);
+      }
+    } catch {
+      // Silently fail on load more
+    }
+  }, [boxId]);
+
+  // Hook de infinite scroll
+  const { sentinelRef, isLoadingMore } = useInfiniteScroll(
+    loadMoreEmails,
+    page < totalPages,
+    { threshold: 200, disabled: loading || emailsLoading || isInitialLoad }
+  );
 
   useEffect(() => {
     const loadData = async () => {
@@ -101,12 +128,7 @@ export default function BoxDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boxId]);
 
-  useEffect(() => {
-    if (!loading) {
-      fetchEmails();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  // Removido useEffect de page - agora usa infinite scroll
 
   const handleCopy = async () => {
     if (!box) return;
@@ -352,27 +374,26 @@ export default function BoxDetailPage() {
         )}
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2" data-testid="emails-pagination">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="btn-secondary btn-sm disabled:opacity-50"
-          >
-            Anterior
-          </button>
-          <span className="text-sm text-gray-600">
-            Página {page} de {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="btn-secondary btn-sm disabled:opacity-50"
-          >
-            Próxima
-          </button>
+      {/* Infinite Scroll Sentinel */}
+      <div 
+        ref={sentinelRef} 
+        className="h-4" 
+        data-testid="emails-sentinel"
+      />
+      
+      {/* Loading More Indicator */}
+      {isLoadingMore && (
+        <div className="flex items-center justify-center py-4 gap-2 text-gray-500">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Carregando mais emails...</span>
         </div>
+      )}
+      
+      {/* End of List Indicator */}
+      {!emailsLoading && !isLoadingMore && page >= totalPages && emails.length > 0 && (
+        <p className="text-center text-sm text-gray-400 py-4">
+          Fim da lista • {emails.length} email{emails.length !== 1 ? 's' : ''} carregado{emails.length !== 1 ? 's' : ''}
+        </p>
       )}
     </div>
   );

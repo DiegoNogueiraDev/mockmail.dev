@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import Link from 'next/link';
 import { api } from '@/lib/apiClient';
 import { ConfirmModal } from '@/components/ConfirmModal';
@@ -52,6 +53,8 @@ export default function BoxesPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [clearingId, setClearingId] = useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const pageRef = useRef(1);
   
   // Modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -70,14 +73,17 @@ export default function BoxesPage() {
     onConfirm: async () => {},
   });
 
+  // Fetch inicial ou refresh - reseta a lista
   const fetchBoxes = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setIsInitialLoad(true);
+    pageRef.current = 1;
+    setPage(1);
 
     try {
-      const response = await api.get<BoxesData>(`/api/boxes?page=${page}&limit=10`);
+      const response = await api.get<BoxesData>(`/api/boxes?page=1&limit=20`);
       if (response.success) {
-        // API retorna { success, data: [...], pagination: {...} } diretamente
         const apiResponse = response as unknown as { success: boolean; data: EmailBox[]; pagination: { totalPages: number } };
         setBoxes(apiResponse.data || []);
         setTotalPages(apiResponse.pagination?.totalPages || 1);
@@ -86,12 +92,39 @@ export default function BoxesPage() {
       setError('Não foi possível carregar as caixas de email');
     } finally {
       setLoading(false);
+      setIsInitialLoad(false);
     }
-  }, [page]);
+  }, []);
+
+  // Fetch para carregar mais itens (infinite scroll)
+  const loadMoreBoxes = useCallback(async () => {
+    const nextPage = pageRef.current + 1;
+    
+    try {
+      const response = await api.get<BoxesData>(`/api/boxes?page=${nextPage}&limit=20`);
+      if (response.success) {
+        const apiResponse = response as unknown as { success: boolean; data: EmailBox[]; pagination: { totalPages: number } };
+        setBoxes(prev => [...prev, ...(apiResponse.data || [])]);
+        setTotalPages(apiResponse.pagination?.totalPages || 1);
+        pageRef.current = nextPage;
+        setPage(nextPage);
+      }
+    } catch {
+      // Silently fail on load more - user can refresh
+    }
+  }, []);
+
+  // Hook de infinite scroll
+  const { sentinelRef, isLoadingMore } = useInfiniteScroll(
+    loadMoreBoxes,
+    page < totalPages,
+    { threshold: 200, disabled: loading || isInitialLoad }
+  );
 
   useEffect(() => {
     fetchBoxes();
-  }, [fetchBoxes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleCopyAddress = async (address: string, id: string) => {
     try {
@@ -369,27 +402,26 @@ export default function BoxesPage() {
         )}
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2" data-testid="boxes-pagination">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="btn-secondary btn-sm disabled:opacity-50"
-          >
-            Anterior
-          </button>
-          <span className="text-sm text-gray-600">
-            Página {page} de {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="btn-secondary btn-sm disabled:opacity-50"
-          >
-            Próxima
-          </button>
+      {/* Infinite Scroll Sentinel */}
+      <div 
+        ref={sentinelRef} 
+        className="h-4" 
+        data-testid="boxes-sentinel"
+      />
+      
+      {/* Loading More Indicator */}
+      {isLoadingMore && (
+        <div className="flex items-center justify-center py-4 gap-2 text-gray-500">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Carregando mais caixas...</span>
         </div>
+      )}
+      
+      {/* End of List Indicator */}
+      {!loading && !isLoadingMore && page >= totalPages && boxes.length > 0 && (
+        <p className="text-center text-sm text-gray-400 py-4">
+          Fim da lista • {boxes.length} caixa{boxes.length !== 1 ? 's' : ''} carregada{boxes.length !== 1 ? 's' : ''}
+        </p>
       )}
       </div>
     </>
