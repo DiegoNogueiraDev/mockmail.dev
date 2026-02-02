@@ -60,14 +60,21 @@ export default function RegisterPage() {
         password,
       });
 
-      if (response.success) {
+      // Se chegou aqui sem erro, o registro foi bem-sucedido (201)
+      // A API retorna o usuário diretamente ou { success: true }
+      if (response && !response.error) {
         toast.success('Conta criada com sucesso! Faça login para continuar.');
         router.push('/login');
       } else {
-        setError(response.error || 'Erro ao criar conta');
+        setError(response?.error || response?.message || 'Erro ao criar conta');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao criar conta. Tente novamente.');
+      // Erro de rede ou exceção
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao criar conta. Tente novamente.';
+      // Não mostrar erro se foi redirecionado para login (sessão expirada)
+      if (!errorMessage.includes('Sessão expirada')) {
+        setError(errorMessage);
+      }
     } finally {
       setIsLoading(false);
     }
