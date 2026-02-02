@@ -1,26 +1,27 @@
 #!/bin/bash
 # =============================================================================
-# HOT DEPLOY - CRM Grupo Souza Monteiro
+# HOT DEPLOY - MockMail.dev
 # =============================================================================
-# Deploy seguro para horário comercial - SEM DOWNTIME
+# Deploy rápido SEM DOWNTIME - ideal para horário comercial
 #
 # Características:
 #   - Zero downtime (usa PM2 reload graceful)
 #   - Backup automático antes de aplicar mudanças
 #   - Rollback automático em caso de falha
-#   - Validação de saúde antes e depois
-#   - DETECÇÃO AUTOMÁTICA de mudanças frontend/backend
+#   - Detecção automática de mudanças API/Frontend
 #   - Limpeza de cache para garantir código novo
 #
 # Uso:
 #   ./deploy-hot.sh                    # Auto-detecta o que precisa rebuild
-#   ./deploy-hot.sh --force            # Força deploy mesmo sem mudanças pendentes
-#   ./deploy-hot.sh --backend-only     # Força apenas backend (ignora frontend)
+#   ./deploy-hot.sh --force            # Força deploy mesmo sem mudanças
+#   ./deploy-hot.sh --api-only         # Apenas API (ignora frontend)
 #   ./deploy-hot.sh --frontend         # Força rebuild do frontend
 #   ./deploy-hot.sh --dry-run          # Simula sem aplicar
 #   ./deploy-hot.sh --rollback         # Volta para versão anterior
+#   ./deploy-hot.sh --env=producao     # Deploy em produção
 #
 # =============================================================================
+
 set -e
 
 # Cores
@@ -32,12 +33,15 @@ CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 NC='\033[0m'
 
-# Diretórios
-PROJECT_ROOT="/home/cortexflow/crm-monteiro-souza"
-BACKEND_DIR="$PROJECT_ROOT/gsm-2.0/backend"
-FRONTEND_DIR="$PROJECT_ROOT/gsm-2.0/frontend"
+# Detectar diretório do projeto
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR"
+
+# Diretórios (RENOMEADOS)
+API_DIR="$PROJECT_ROOT/backend"
+WATCH_DIR="$PROJECT_ROOT/frontend"
 BACKUP_DIR="$PROJECT_ROOT/.hot-deploy-backups"
-LOCKFILE="/tmp/hot-deploy.lock"
+LOCKFILE="/tmp/mockmail-hot-deploy.lock"
 
 # Configurações
 MAX_BACKUPS=5
@@ -45,13 +49,25 @@ HEALTH_CHECK_TIMEOUT=30
 RELOAD_WAIT=5
 
 # Flags
+ENVIRONMENT="homologacao"
 INCLUDE_FRONTEND=false
-FORCE_BACKEND_ONLY=false
+FORCE_API_ONLY=false
 DRY_RUN=false
 ROLLBACK_MODE=false
 FORCE_DEPLOY=false
-HAS_BACKEND_CHANGES=false
+HAS_API_CHANGES=false
 HAS_FRONTEND_CHANGES=false
+
+# URLs por ambiente
+declare -A API_URLS=(
+    ["homologacao"]="https://api.homologacao.mockmail.dev"
+    ["producao"]="https://api.mockmail.dev"
+)
+
+declare -A BRANCHES=(
+    ["homologacao"]="homologacao-mockmail"
+    ["producao"]="master"
+)
 
 # Funções auxiliares
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -65,7 +81,7 @@ separator() {
     echo -e "\n${CYAN}════════════════════════════════════════════════════════════════════════════${NC}\n"
 }
 
-# Verificar se outro deploy está rodando
+# Verificar lock
 check_lock() {
     if [ -f "$LOCKFILE" ]; then
         LOCK_PID=$(cat "$LOCKFILE" 2>/dev/null)
@@ -100,11 +116,7 @@ check_health() {
 # Verificar status PM2
 check_pm2_status() {
     local service=$1
-    local status=$(pm2 jlist 2>/dev/null | node -e "
-        const data = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-        const svc = data.find(p => p.name === '$service');
-        console.log(svc ? svc.pm2_env.status : 'not_found');
-    " 2>/dev/null)
+    local status=$(pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"$service\") | .pm2_env.status" 2>/dev/null || echo "not_found")
     echo "$status"
 }
 
@@ -117,10 +129,10 @@ create_backup() {
     BACKUP_NAME="backup_$(date +%Y%m%d_%H%M%S)"
     BACKUP_PATH="$BACKUP_DIR/$BACKUP_NAME"
 
-    # Salvar commit atual
     cd "$PROJECT_ROOT"
     CURRENT_COMMIT=$(git rev-parse HEAD)
     echo "$CURRENT_COMMIT" > "$BACKUP_PATH.commit"
+    echo "$ENVIRONMENT" > "$BACKUP_PATH.env"
 
     # Salvar estado dos serviços
     pm2 jlist > "$BACKUP_PATH.pm2.json" 2>/dev/null || true
@@ -137,7 +149,7 @@ create_backup() {
     echo "$BACKUP_NAME"
 }
 
-# Rollback para backup anterior
+# Rollback
 do_rollback() {
     log_step "Executando ROLLBACK"
 
@@ -146,8 +158,6 @@ do_rollback() {
         exit 1
     fi
 
-    # Listar backups disponíveis
-    echo -e "\nBackups disponíveis:"
     cd "$BACKUP_DIR"
     BACKUPS=($(ls -t *.commit 2>/dev/null | head -5))
 
@@ -156,10 +166,12 @@ do_rollback() {
         exit 1
     fi
 
+    echo -e "\nBackups disponíveis:"
     for i in "${!BACKUPS[@]}"; do
         COMMIT=$(cat "${BACKUPS[$i]}")
+        ENV=$(cat "${BACKUPS[$i]%.commit}.env" 2>/dev/null || echo "unknown")
         BACKUP_DATE=$(echo "${BACKUPS[$i]}" | sed 's/backup_\([0-9]*\)_\([0-9]*\).commit/\1 \2/' | sed 's/\(....\)\(..\)\(..\) \(..\)\(..\)\(..\)/\3\/\2\/\1 \4:\5:\6/')
-        echo -e "  ${GREEN}[$i]${NC} $BACKUP_DATE - $(cd $PROJECT_ROOT && git log --oneline -1 $COMMIT 2>/dev/null || echo $COMMIT)"
+        echo -e "  ${GREEN}[$i]${NC} $BACKUP_DATE [$ENV] - $(cd $PROJECT_ROOT && git log --oneline -1 $COMMIT 2>/dev/null || echo $COMMIT)"
     done
 
     echo ""
@@ -188,39 +200,43 @@ do_rollback() {
 
     cd "$PROJECT_ROOT"
 
-    # Verificar se commit existe
     if ! git cat-file -e "$ROLLBACK_COMMIT" 2>/dev/null; then
         log_error "Commit não encontrado no repositório!"
         exit 1
     fi
 
     # Fazer checkout do commit
-    git checkout "$ROLLBACK_COMMIT" -- gsm-2.0/backend/src gsm-2.0/frontend/src 2>/dev/null || {
+    git checkout "$ROLLBACK_COMMIT" -- backend/src frontend/app frontend/components 2>/dev/null || {
         log_error "Falha ao restaurar arquivos!"
         exit 1
     }
 
     # Limpar caches
     log_info "Limpando caches..."
-    rm -rf "$BACKEND_DIR/node_modules/.cache" 2>/dev/null || true
-    rm -rf "$FRONTEND_DIR/.next" "$FRONTEND_DIR/node_modules/.cache" 2>/dev/null || true
+    rm -rf "$API_DIR/dist" 2>/dev/null || true
+    rm -rf "$WATCH_DIR/.next" "$WATCH_DIR/node_modules/.cache" 2>/dev/null || true
 
-    # Rebuild frontend se necessário
+    # Rebuild
+    log_info "Reconstruindo API..."
+    cd "$API_DIR"
+    npm run build || log_warning "Build da API falhou"
+
     log_info "Reconstruindo frontend..."
-    cd "$FRONTEND_DIR"
+    cd "$WATCH_DIR"
     npm run build || log_warning "Build do frontend falhou"
 
     # Reload serviços
     log_info "Recarregando serviços..."
-    pm2 reload gsm-backend gsm-frontend --update-env 2>/dev/null || true
+    cd "$PROJECT_ROOT"
+    pm2 reload mockmail-api mockmail-watch --update-env 2>/dev/null || pm2 reload all
 
     sleep $RELOAD_WAIT
 
-    if check_health "backend" "4000" "/health"; then
+    if check_health "api" "3000" "/api/csrf-token"; then
         log_success "Rollback concluído com sucesso!"
     else
         log_error "Rollback aplicado, mas serviço não está saudável!"
-        log_warning "Verifique os logs: pm2 logs gsm-backend"
+        log_warning "Verifique os logs: pm2 logs"
         exit 1
     fi
 }
@@ -229,15 +245,16 @@ do_rollback() {
 check_changes() {
     cd "$PROJECT_ROOT"
 
+    BRANCH="${BRANCHES[$ENVIRONMENT]}"
     git fetch origin 2>/dev/null
 
     LOCAL=$(git rev-parse HEAD)
-    REMOTE=$(git rev-parse origin/producao-gsm)
+    REMOTE=$(git rev-parse "origin/$BRANCH" 2>/dev/null || echo "$LOCAL")
 
     if [ "$LOCAL" = "$REMOTE" ]; then
         if [ "$FORCE_DEPLOY" = true ]; then
             log_hot "Modo FORCE: Ignorando verificação de mudanças"
-            HAS_BACKEND_CHANGES=true
+            HAS_API_CHANGES=true
             if [ "$INCLUDE_FRONTEND" = true ]; then
                 HAS_FRONTEND_CHANGES=true
             fi
@@ -254,46 +271,29 @@ check_changes() {
     echo -e "\nMudanças a serem aplicadas:"
     git log --oneline $LOCAL..$REMOTE 2>/dev/null | head -10
 
-    # Detectar mudanças no backend
-    BACKEND_FILE_CHANGES=$(git diff $LOCAL..$REMOTE --name-only | grep "gsm-2.0/backend/" | wc -l)
-    if [ "$BACKEND_FILE_CHANGES" -gt 0 ]; then
-        HAS_BACKEND_CHANGES=true
-        echo -e "\n${BLUE}Backend:${NC} $BACKEND_FILE_CHANGES arquivos modificados"
+    # Detectar mudanças na API
+    API_FILE_CHANGES=$(git diff $LOCAL..$REMOTE --name-only 2>/dev/null | grep "backend/" | wc -l)
+    if [ "$API_FILE_CHANGES" -gt 0 ]; then
+        HAS_API_CHANGES=true
+        echo -e "\n${BLUE}API:${NC} $API_FILE_CHANGES arquivos modificados"
     fi
 
     # Detectar mudanças no frontend
-    FRONTEND_FILE_CHANGES=$(git diff $LOCAL..$REMOTE --name-only | grep "gsm-2.0/frontend/" | wc -l)
+    FRONTEND_FILE_CHANGES=$(git diff $LOCAL..$REMOTE --name-only 2>/dev/null | grep "frontend/" | wc -l)
     if [ "$FRONTEND_FILE_CHANGES" -gt 0 ]; then
         HAS_FRONTEND_CHANGES=true
         echo -e "${BLUE}Frontend:${NC} $FRONTEND_FILE_CHANGES arquivos modificados"
 
-        # Listar arquivos do frontend modificados
-        echo -e "\n${CYAN}Arquivos frontend modificados:${NC}"
-        git diff $LOCAL..$REMOTE --name-only | grep "gsm-2.0/frontend/" | head -10
-
-        # AUTO-HABILITAR frontend se houver mudanças e não for --backend-only
-        if [ "$FORCE_BACKEND_ONLY" = false ]; then
+        if [ "$FORCE_API_ONLY" = false ]; then
             INCLUDE_FRONTEND=true
             echo -e "\n${MAGENTA}[AUTO]${NC} Frontend será reconstruído automaticamente"
         else
-            log_warning "Frontend ignorado (--backend-only especificado)"
+            log_warning "Frontend ignorado (--api-only especificado)"
         fi
     fi
 
-    # Verificar se há mudanças no schema do Prisma
-    if git diff $LOCAL..$REMOTE --name-only | grep -q "prisma/schema.prisma"; then
-        echo ""
-        log_warning "⚠️  ATENÇÃO: Há mudanças no schema do banco de dados!"
-        log_warning "Recomendado usar ./deploy.sh completo para aplicar migrations"
-        read -p "Continuar mesmo assim? (s/N): " CONTINUE
-        if [[ ! "${CONTINUE:-N}" =~ ^[Ss]$ ]]; then
-            log_info "Deploy cancelado."
-            return 1
-        fi
-    fi
-
-    # Verificar se há mudanças no package.json
-    if git diff $LOCAL..$REMOTE --name-only | grep -q "package.json"; then
+    # Verificar mudanças críticas
+    if git diff $LOCAL..$REMOTE --name-only 2>/dev/null | grep -q "package.json"; then
         echo ""
         log_warning "⚠️  ATENÇÃO: Há mudanças em dependências (package.json)!"
         log_warning "Recomendado usar ./deploy.sh completo para instalar dependências"
@@ -312,23 +312,23 @@ apply_changes() {
     log_step "Aplicando mudanças"
 
     cd "$PROJECT_ROOT"
+    BRANCH="${BRANCHES[$ENVIRONMENT]}"
 
-    # Guardar commit atual para possível rollback
     PREVIOUS_COMMIT=$(git rev-parse HEAD)
 
     if [ "$DRY_RUN" = true ]; then
         log_hot "DRY RUN: Simulando git pull..."
         git fetch origin
-        git diff HEAD..origin/producao-gsm --stat
+        git diff HEAD..origin/$BRANCH --stat
         return 0
     fi
 
     # Pull das mudanças
-    log_info "Usando mudanças locais (git pull ignorado)..."
-# SKIPPED:     git pull origin producao-gsm || {
-# SKIPPED:         log_error "Falha no git pull!"
-# SKIPPED:         exit 1
-# SKIPPED:     }
+    log_info "Aplicando mudanças da branch $BRANCH..."
+    git pull origin "$BRANCH" || {
+        log_error "Falha no git pull!"
+        exit 1
+    }
 
     NEW_COMMIT=$(git rev-parse HEAD)
     log_success "Código atualizado: $(git log --oneline -1)"
@@ -336,7 +336,7 @@ apply_changes() {
     echo "$PREVIOUS_COMMIT" > "$BACKUP_DIR/last_deploy.rollback"
 }
 
-# Limpar caches (CRÍTICO para garantir código novo)
+# Limpar caches
 clear_caches() {
     log_step "Limpando caches"
 
@@ -345,69 +345,79 @@ clear_caches() {
         return 0
     fi
 
-    # Backend cache
-    if [ "$HAS_BACKEND_CHANGES" = true ]; then
-        log_info "Limpando cache do backend..."
-        rm -rf "$BACKEND_DIR/node_modules/.cache" 2>/dev/null || true
-        log_success "Cache backend limpo"
+    # API cache
+    if [ "$HAS_API_CHANGES" = true ]; then
+        log_info "Limpando cache da API..."
+        rm -rf "$API_DIR/dist" 2>/dev/null || true
+        log_success "Cache API limpo"
     fi
 
-    # Frontend cache (sempre limpa se vai rebuildar)
+    # Frontend cache
     if [ "$INCLUDE_FRONTEND" = true ]; then
         log_info "Limpando cache do frontend..."
-        rm -rf "$FRONTEND_DIR/.next" 2>/dev/null || true
-        rm -rf "$FRONTEND_DIR/node_modules/.cache" 2>/dev/null || true
+        rm -rf "$WATCH_DIR/.next" 2>/dev/null || true
+        rm -rf "$WATCH_DIR/node_modules/.cache" 2>/dev/null || true
         log_success "Cache frontend limpo"
     fi
 }
 
-# Reload do backend (graceful)
-reload_backend() {
-    if [ "$HAS_BACKEND_CHANGES" = false ] && [ "$HAS_FRONTEND_CHANGES" = false ]; then
-        log_info "Nenhuma mudança no backend detectada"
+# Build e reload da API
+reload_api() {
+    if [ "$HAS_API_CHANGES" = false ] && [ "$FORCE_DEPLOY" = false ]; then
+        log_info "Nenhuma mudança na API detectada"
         return 0
     fi
 
-    log_step "Recarregando Backend (Zero Downtime)"
+    log_step "Recompilando e Recarregando API (Zero Downtime)"
 
     if [ "$DRY_RUN" = true ]; then
-        log_hot "DRY RUN: Simulando pm2 reload gsm-backend..."
+        log_hot "DRY RUN: Simulando build e reload da API..."
         return 0
     fi
 
+    # Build
+    log_info "Compilando API..."
+    cd "$API_DIR"
+    npm run build || {
+        log_error "Build da API falhou!"
+        exit 1
+    }
+    log_success "API compilada"
+
     # Verificar status atual
-    CURRENT_STATUS=$(check_pm2_status "gsm-backend")
+    CURRENT_STATUS=$(check_pm2_status "mockmail-api")
     if [ "$CURRENT_STATUS" != "online" ]; then
-        log_warning "Backend não está online (status: $CURRENT_STATUS)"
+        log_warning "API não está online (status: $CURRENT_STATUS)"
         log_info "Tentando iniciar..."
-        pm2 start gsm-backend 2>/dev/null || pm2 restart gsm-backend
+        cd "$PROJECT_ROOT"
+        pm2 start ecosystem.config.js --only mockmail-api 2>/dev/null || pm2 restart mockmail-api
     fi
 
-    # Reload graceful (mantém conexões existentes)
+    # Reload graceful
     log_info "Executando reload graceful..."
-    pm2 reload gsm-backend --update-env
+    pm2 reload mockmail-api --update-env
 
-    # Aguardar estabilização
     log_info "Aguardando estabilização ($RELOAD_WAIT segundos)..."
     sleep $RELOAD_WAIT
 
     # Verificar saúde
     log_info "Verificando saúde do serviço..."
-    if check_health "backend" "4000" "/health"; then
-        log_success "Backend recarregado com sucesso!"
+    if check_health "api" "3000" "/api/csrf-token"; then
+        log_success "API recarregada com sucesso!"
     else
-        log_error "Backend não está respondendo!"
+        log_error "API não está respondendo!"
         log_warning "Tentando rollback automático..."
 
         if [ -f "$BACKUP_DIR/last_deploy.rollback" ]; then
             ROLLBACK_COMMIT=$(cat "$BACKUP_DIR/last_deploy.rollback")
             cd "$PROJECT_ROOT"
-            git checkout "$ROLLBACK_COMMIT" -- gsm-2.0/backend/src
-            rm -rf "$BACKEND_DIR/node_modules/.cache" 2>/dev/null || true
-            pm2 reload gsm-backend --update-env
+            git checkout "$ROLLBACK_COMMIT" -- backend/src
+            cd "$API_DIR"
+            npm run build
+            pm2 reload mockmail-api --update-env
             sleep $RELOAD_WAIT
 
-            if check_health "backend" "4000" "/health"; then
+            if check_health "api" "3000" "/api/csrf-token"; then
                 log_warning "Rollback automático executado!"
                 log_error "Deploy falhou, mas sistema foi restaurado."
             else
@@ -419,11 +429,11 @@ reload_backend() {
     fi
 }
 
-# Rebuild do frontend (se necessário)
+# Rebuild do frontend
 rebuild_frontend() {
     if [ "$INCLUDE_FRONTEND" = false ]; then
         if [ "$HAS_FRONTEND_CHANGES" = true ]; then
-            log_warning "Há mudanças no frontend mas rebuild foi ignorado (--backend-only)"
+            log_warning "Há mudanças no frontend mas rebuild foi ignorado (--api-only)"
         fi
         return 0
     fi
@@ -435,23 +445,15 @@ rebuild_frontend() {
         return 0
     fi
 
-    cd "$FRONTEND_DIR"
+    cd "$WATCH_DIR"
+
+    # Definir variáveis de ambiente
+    export NEXT_PUBLIC_API_URL="${API_URLS[$ENVIRONMENT]}"
 
     # Build
     log_info "Executando build..."
     npm run build || {
         log_error "Build do frontend falhou!"
-        log_warning "Tentando rollback..."
-
-        if [ -f "$BACKUP_DIR/last_deploy.rollback" ]; then
-            ROLLBACK_COMMIT=$(cat "$BACKUP_DIR/last_deploy.rollback")
-            cd "$PROJECT_ROOT"
-            git checkout "$ROLLBACK_COMMIT" -- gsm-2.0/frontend/src
-            cd "$FRONTEND_DIR"
-            rm -rf .next node_modules/.cache
-            npm run build || log_error "Rollback do frontend também falhou!"
-        fi
-
         exit 1
     }
 
@@ -459,11 +461,11 @@ rebuild_frontend() {
 
     # Reload frontend
     log_info "Recarregando frontend..."
-    pm2 reload gsm-frontend --update-env
+    pm2 reload mockmail-watch --update-env
 
     sleep $RELOAD_WAIT
 
-    if check_health "frontend" "3000" "/"; then
+    if check_health "frontend" "3001" "/"; then
         log_success "Frontend recarregado com sucesso!"
     else
         log_warning "Frontend pode estar demorando para iniciar..."
@@ -481,135 +483,123 @@ final_validation() {
 
     local ALL_OK=true
 
-    # Backend
-    if check_health "backend" "4000" "/health"; then
-        log_success "Backend: OK"
+    # API
+    if check_health "api" "3000" "/api/csrf-token"; then
+        log_success "API: OK"
     else
-        log_error "Backend: FALHOU"
+        log_error "API: FALHOU"
         ALL_OK=false
     fi
 
     # Frontend
-    if check_health "frontend" "3000" "/"; then
+    if check_health "frontend" "3001" "/"; then
         log_success "Frontend: OK"
     else
         log_warning "Frontend: Não responde (pode estar iniciando)"
     fi
 
-    # Banco de dados
-    cd "$BACKEND_DIR"
-    if node -e "const{PrismaClient}=require('@prisma/client');new PrismaClient().\$connect().then(()=>process.exit(0)).catch(()=>process.exit(1))" 2>/dev/null; then
-        log_success "Banco de dados: OK"
-    else
-        log_error "Banco de dados: FALHOU"
-        ALL_OK=false
-    fi
-
     if [ "$ALL_OK" = false ]; then
-        log_error "Validação falhou! Verifique os logs."
+        log_error "Validação falhou! Verifique os logs: pm2 logs"
         exit 1
     fi
 
     log_success "Todas as validações passaram!"
 }
 
-# Exibir resumo
+# Resumo
 show_summary() {
     separator
-    echo -e "${GREEN}🚀 HOT DEPLOY CONCLUÍDO${NC}"
+    echo -e "${GREEN}🚀 HOT DEPLOY CONCLUÍDO - MockMail.dev${NC}"
     separator
 
-    echo -e "📊 Status dos serviços:"
-    pm2 list | grep -E "gsm-backend|gsm-frontend" || true
-
-    echo -e "\n📝 Commit atual:"
+    echo -e "📊 Ambiente: ${CYAN}$ENVIRONMENT${NC}"
+    echo ""
+    echo -e "📦 O que foi atualizado:"
+    [ "$HAS_API_CHANGES" = true ] && echo -e "   ${GREEN}✓${NC} API (build + reload)"
+    [ "$INCLUDE_FRONTEND" = true ] && echo -e "   ${GREEN}✓${NC} Frontend (rebuild completo)"
+    echo ""
+    echo -e "📝 Commit atual:"
     cd "$PROJECT_ROOT"
     git log --oneline -1
-
-    echo -e "\n📦 O que foi atualizado:"
-    [ "$HAS_BACKEND_CHANGES" = true ] && echo -e "   ${GREEN}✓${NC} Backend"
-    [ "$INCLUDE_FRONTEND" = true ] && echo -e "   ${GREEN}✓${NC} Frontend (rebuild completo)"
-
-    echo -e "\n🔧 Comandos úteis:"
-    echo -e "   pm2 logs gsm-backend        # Ver logs do backend"
-    echo -e "   pm2 logs gsm-frontend       # Ver logs do frontend"
-    echo -e "   ./deploy-hot.sh --rollback  # Reverter mudanças"
+    echo ""
+    echo -e "🔧 Comandos úteis:"
+    echo -e "   pm2 logs mockmail-api      # Logs da API"
+    echo -e "   pm2 logs mockmail-watch    # Logs do frontend"
+    echo -e "   ./deploy-hot.sh --rollback # Reverter mudanças"
 
     separator
+}
+
+# Parse argumentos
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --env=*)
+                ENVIRONMENT="${1#*=}"
+                shift
+                ;;
+            --frontend)
+                INCLUDE_FRONTEND=true
+                shift
+                ;;
+            --api-only)
+                FORCE_API_ONLY=true
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            --rollback)
+                ROLLBACK_MODE=true
+                shift
+                ;;
+            --force)
+                FORCE_DEPLOY=true
+                shift
+                ;;
+            --help|-h)
+                echo "MockMail.dev - Hot Deploy (Zero Downtime)"
+                echo ""
+                echo "Uso: ./deploy-hot.sh [opções]"
+                echo ""
+                echo "Opções:"
+                echo "  --env=ENV     Ambiente: homologacao (default) ou producao"
+                echo "  --force       Força deploy mesmo sem mudanças pendentes"
+                echo "  --frontend    Força rebuild do frontend"
+                echo "  --api-only    Ignora mudanças no frontend"
+                echo "  --dry-run     Simular sem aplicar mudanças"
+                echo "  --rollback    Reverter para versão anterior"
+                echo "  --help        Exibir esta ajuda"
+                exit 0
+                ;;
+            *)
+                log_error "Opção desconhecida: $1"
+                exit 1
+                ;;
+        esac
+    done
 }
 
 # =============================================================================
 # MAIN
 # =============================================================================
 
-# Parse argumentos
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --frontend)
-            INCLUDE_FRONTEND=true
-            shift
-            ;;
-        --backend-only)
-            FORCE_BACKEND_ONLY=true
-            shift
-            ;;
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        --rollback)
-            ROLLBACK_MODE=true
-            shift
-            ;;
-        --force)
-            FORCE_DEPLOY=true
-            shift
-            ;;
-        --help|-h)
-            echo "Uso: ./deploy-hot.sh [opções]"
-            echo ""
-            echo "Opções:"
-            echo "  (sem opção)     Auto-detecta mudanças e rebuilda o necessário"
-            echo "  --force         Força deploy mesmo sem mudanças pendentes do remoto"
-            echo "  --frontend      Força rebuild do frontend mesmo sem mudanças"
-            echo "  --backend-only  Ignora mudanças no frontend (apenas backend)"
-            echo "  --dry-run       Simular sem aplicar mudanças"
-            echo "  --rollback      Reverter para versão anterior"
-            echo "  --help          Exibir esta ajuda"
-            echo ""
-            echo "Exemplos:"
-            echo "  ./deploy-hot.sh              # Detecta automaticamente"
-            echo "  ./deploy-hot.sh --force      # Força reload mesmo sem mudanças"
-            echo "  ./deploy-hot.sh --force --frontend  # Força reload de tudo"
-            echo "  ./deploy-hot.sh --dry-run    # Ver o que seria feito"
-            echo "  ./deploy-hot.sh --rollback   # Reverter último deploy"
-            exit 0
-            ;;
-        *)
-            log_error "Opção desconhecida: $1"
-            exit 1
-            ;;
-    esac
-done
-
-# Verificações iniciais
-[ ! -d "$PROJECT_ROOT" ] && { log_error "Diretório não encontrado: $PROJECT_ROOT"; exit 1; }
+parse_args "$@"
 
 separator
-echo -e "${MAGENTA}⚡ HOT DEPLOY - CRM GRUPO SOUZA MONTEIRO${NC}"
+echo -e "${MAGENTA}⚡ HOT DEPLOY - MockMail.dev${NC}"
+echo ""
+echo -e "   Ambiente: ${CYAN}$ENVIRONMENT${NC}"
 if [ "$DRY_RUN" = true ]; then
-    echo -e "${YELLOW}   MODO: DRY RUN (simulação)${NC}"
+    echo -e "   ${YELLOW}MODO: DRY RUN (simulação)${NC}"
 fi
-if [ "$FORCE_BACKEND_ONLY" = true ]; then
-    echo -e "${YELLOW}   MODO: Backend only (ignora frontend)${NC}"
+if [ "$FORCE_API_ONLY" = true ]; then
+    echo -e "   ${YELLOW}MODO: API only (ignora frontend)${NC}"
 fi
 if [ "$FORCE_DEPLOY" = true ]; then
-    echo -e "${MAGENTA}   MODO: FORCE (ignora verificação de mudanças)${NC}"
+    echo -e "   ${MAGENTA}MODO: FORCE (ignora verificação)${NC}"
 fi
-if [ "$INCLUDE_FRONTEND" = true ] && [ "$FORCE_BACKEND_ONLY" = false ]; then
-    echo -e "${CYAN}   Incluindo: Frontend (forçado)${NC}"
-fi
-echo -e "${BLUE}   Auto-detecção: ATIVADA${NC}"
 separator
 
 # Verificar lock
@@ -626,12 +616,12 @@ if ! check_changes; then
     exit 0
 fi
 
-# Mostrar resumo do que será feito
+# Resumo do que será feito
 echo ""
 echo -e "${CYAN}━━━ Resumo do Deploy ━━━${NC}"
-[ "$HAS_BACKEND_CHANGES" = true ] && echo -e "  ${GREEN}→${NC} Backend será recarregado"
+[ "$HAS_API_CHANGES" = true ] && echo -e "  ${GREEN}→${NC} API será recompilada e recarregada"
 [ "$INCLUDE_FRONTEND" = true ] && echo -e "  ${GREEN}→${NC} Frontend será reconstruído"
-[ "$HAS_BACKEND_CHANGES" = false ] && [ "$HAS_FRONTEND_CHANGES" = false ] && echo -e "  ${YELLOW}→${NC} Nenhuma mudança significativa detectada"
+[ "$HAS_API_CHANGES" = false ] && [ "$HAS_FRONTEND_CHANGES" = false ] && echo -e "  ${YELLOW}→${NC} Nenhuma mudança significativa"
 echo ""
 
 read -p "Aplicar mudanças? (S/n): " CONFIRM
@@ -640,23 +630,13 @@ if [[ "${CONFIRM:-S}" =~ ^[Nn]$ ]]; then
     exit 0
 fi
 
-# Criar backup
+# Executar
 BACKUP_NAME=$(create_backup)
-
-# Aplicar mudanças
 apply_changes
-
-# Limpar caches (CRÍTICO!)
 clear_caches
-
-# Reload serviços
-reload_backend
+reload_api
 rebuild_frontend
-
-# Validação
 final_validation
-
-# Resumo
 show_summary
 
-log_success "🎉 Deploy concluído sem downtime!"
+log_success "🎉 Hot deploy concluído sem downtime!"

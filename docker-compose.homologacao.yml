@@ -1,0 +1,83 @@
+# =============================================================================
+# Docker Compose - MockMail.dev (Homologação) - INFRAESTRUTURA
+# =============================================================================
+#
+# Apenas serviços de infraestrutura (bancos de dados)
+# API e Frontend são gerenciados via PM2 (./deploy.sh)
+#
+# Portas Homologação (diferentes de produção):
+#   MongoDB:    27018
+#   Redis:      6380
+#
+# Uso:
+#   ./deploy-docker.sh --env=homologacao        # Subir infra
+#   ./deploy-docker.sh --env=homologacao --down # Parar infra
+#   ./deploy.sh --env=homologacao               # Subir API/Frontend via PM2
+#
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # MongoDB
+  # ===========================================================================
+  mongodb-hml:
+    image: mongo:7.0
+    container_name: mockmail-mongodb-hml
+    restart: unless-stopped
+    ports:
+      - "27018:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-mockmail_hml_2026}
+      MONGO_INITDB_DATABASE: mockmail_hml
+    volumes:
+      - mongodb_hml_data:/data/db
+      - ./database-backup-hml:/backup
+    networks:
+      - mockmail-hml-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "environment=homologacao"
+
+  # ===========================================================================
+  # Redis
+  # ===========================================================================
+  redis-hml:
+    image: redis:7-alpine
+    container_name: mockmail-redis-hml
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-mockmail_hml_2026}
+    volumes:
+      - redis_hml_data:/data
+    networks:
+      - mockmail-hml-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-mockmail_hml_2026}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "environment=homologacao"
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  mongodb_hml_data:
+    name: mockmail_mongodb_hml_data
+  redis_hml_data:
+    name: mockmail_redis_hml_data
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  mockmail-hml-network:
+    name: mockmail-hml-network
+    driver: bridge

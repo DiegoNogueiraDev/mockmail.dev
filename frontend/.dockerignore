@@ -1,0 +1,42 @@
+# Dependências
+node_modules
+npm-debug.log
+
+# Build
+.next
+out
+
+# Desenvolvimento
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testes
+coverage
+.nyc_output
+
+# Logs
+logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Next.js
+.next/cache

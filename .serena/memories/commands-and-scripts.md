@@ -1,5 +1,29 @@
 # Comandos e Scripts
 
+## Ambiente Local (Docker)
+```bash
+# Subir containers
+docker compose up -d
+
+# Importar backup MongoDB
+docker exec mockmail-mongodb mongorestore --username=admin --password=mockmail_dev_2026 --authenticationDatabase=admin --archive=/backup/mongodb-backup-*.gz --gzip
+
+# Iniciar API (dev)
+cd api && npm run dev
+
+# Iniciar Watch (dev)  
+cd watch && npm run dev -- --port 3001
+```
+
+## Portas Locais
+- API: http://localhost:3000
+- Watch: http://localhost:3001
+- MongoDB: localhost:27017
+- Redis: localhost:6379
+- PostgreSQL: localhost:5432
+
+---
+
 ## Deploy
 ```bash
 ./deploy.sh

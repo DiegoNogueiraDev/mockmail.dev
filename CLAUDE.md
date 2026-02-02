@@ -5,8 +5,9 @@ Sistema de email temporário: API + Dashboard + Processador de emails.
 
 ## Estrutura
 ```
-api/src/          → Backend Express/TS (porta 3000)
-watch/app/        → Dashboard Next.js 15 (porta 3001)
+backend/src/      → Backend Express/TS (porta 3000/3010)
+
+frontend/app/     → Dashboard Next.js 15 (porta 3001/3011)
 email-processor/  → Python processor
 ```
 
@@ -15,7 +16,7 @@ email-processor/  → Python processor
 
 ## Arquivos Críticos por Módulo
 
-### API (api/src/)
+### Backend (backend/src/)
 | Tipo | Arquivos |
 |------|----------|
 | Controllers | `controllers/auth.controller.ts`, `controllers/mail.controller.ts` |
@@ -23,7 +24,7 @@ email-processor/  → Python processor
 | Models | `models/Email.ts`, `models/EmailBox.ts`, `models/User.ts` |
 | Routes | `routes/router.ts` (agregador) |
 
-### Watch (watch/)
+### Frontend (frontend/)
 | Tipo | Arquivos |
 |------|----------|
 | API Routes | `app/api/*/route.ts` |
@@ -31,15 +32,18 @@ email-processor/  → Python processor
 
 ## Comandos Essenciais
 ```bash
-# Dev
-cd api && npm run dev
-cd watch && npm run dev
+# Infraestrutura (MongoDB, Redis, PostgreSQL)
+./deploy-docker.sh --env=homologacao
 
-# Build/Deploy
-./deploy.sh
+# Serviços (API + Frontend via PM2)
+./deploy.sh --env=homologacao
+
+# Dev local
+cd backend && npm run dev
+cd frontend && npm run dev
 
 # Testes
-cd api && npm test
+cd backend && npm test
 ```
 
 ## Padrões do Código
@@ -66,3 +70,6 @@ cd api && npm test
 - `api-structure.md` - Detalhes do backend
 - `watch-structure.md` - Detalhes do dashboard
 - `commands-and-scripts.md` - Comandos úteis
+- evite regressões de funcionalidades do projeto
+- Nunca abrir novos processos em novas portas, sempre se atentar as portas 3000 e 3001. Caso estejam ocupadas, os processos envolvidos devem ser encerrados e os serviços reiniciados. Não devemos fazer alterações no código sem sentido, só por que processos estão ocupando portas que já estão reservadas.
+- Não regrida funcionalidades.
