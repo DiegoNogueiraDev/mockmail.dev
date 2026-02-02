@@ -68,9 +68,20 @@ export default function RegisterPage() {
       } else {
         setError(response?.error || response?.message || 'Erro ao criar conta');
       }
-    } catch (err) {
-      // Erro de rede ou exceção
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao criar conta. Tente novamente.';
+    } catch (err: unknown) {
+      // Erro de rede ou exceção da API
+      let errorMessage = 'Erro ao criar conta. Tente novamente.';
+
+      if (err && typeof err === 'object') {
+        // Erro da API com dados estruturados
+        const apiError = err as { data?: { error?: string }; message?: string };
+        if (apiError.data?.error) {
+          errorMessage = apiError.data.error;
+        } else if (apiError.message && !apiError.message.includes('Sessão expirada')) {
+          errorMessage = apiError.message;
+        }
+      }
+
       // Não mostrar erro se foi redirecionado para login (sessão expirada)
       if (!errorMessage.includes('Sessão expirada')) {
         setError(errorMessage);

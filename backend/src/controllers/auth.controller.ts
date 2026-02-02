@@ -75,16 +75,16 @@ const validatePassword = (password: string): PasswordValidation => {
 
 export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
-  
+
   // Validação de entrada aprimorada
   if (!email || !password) {
     logger.warn(`CONTROL-AUTH - Login falhou: Campos obrigatórios ausentes`);
-    return res.status(400).json({ message: "Email and password are required" });
+    return res.status(400).json({ error: "Preencha o email e a senha para continuar." });
   }
 
   if (!isValidEmail(email)) {
     logger.warn(`CONTROL-AUTH - Login falhou: Email inválido: ${email}`);
-    return res.status(400).json({ message: "Invalid email format" });
+    return res.status(400).json({ error: "O formato do email é inválido." });
   }
 
   const sanitizedEmail = sanitizeInput(email);
@@ -97,7 +97,8 @@ export const login = async (req: Request, res: Response) => {
       logger.warn(
         `CONTROL-AUTH - Login falhou: Usuário não encontrado para o email: ${sanitizedEmail}`
       );
-      return res.status(404).json({ message: "User not found" });
+      // Mensagem genérica por segurança (não revelar se email existe)
+      return res.status(401).json({ error: "Email ou senha incorretos." });
     }
 
     // Validando a senha
@@ -106,13 +107,13 @@ export const login = async (req: Request, res: Response) => {
       logger.warn(
         `CONTROL-AUTH - Login falhou: Credenciais inválidas para o email: ${sanitizedEmail}`
       );
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res.status(401).json({ error: "Email ou senha incorretos." });
     }
 
     // Gerando par de tokens (access + refresh)
     const tokens = await generateTokenPair(user.id);
     logger.info(`CONTROL-AUTH - Login bem-sucedido para o email: ${sanitizedEmail}`);
-    
+
     // Set httpOnly cookies for tokens
     res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
       ...getAuthCookieOptions(),
@@ -140,27 +141,25 @@ export const login = async (req: Request, res: Response) => {
   } catch (error) {
     logger.error(`CONTROL-AUTH - Erro no login para o email: ${sanitizedEmail}`);
     logger.error(`Detalhes do erro: ${(error as Error).message}`);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ error: "Erro interno do servidor. Tente novamente mais tarde." });
   }
 };
 
 export const register = async (req: Request, res: Response) => {
   const { email, password, name } = req.body;
-  
+
   // Validação de entrada aprimorada
   if (!email || !password || !name) {
     logger.warn(`CONTROL-AUTH - Registro falhou: Campos obrigatórios ausentes`);
-    return res.status(400).json({ 
-      message: "Erro de validação",
-      details: ["Email, password and name are required"]
+    return res.status(400).json({
+      error: "Preencha todos os campos obrigatórios: nome, email e senha."
     });
   }
 
   if (!isValidEmail(email)) {
     logger.warn(`CONTROL-AUTH - Registro falhou: Email inválido: ${email}`);
-    return res.status(400).json({ 
-      message: "Erro de validação",
-      details: ["Invalid email format"]
+    return res.status(400).json({
+      error: "O formato do email é inválido. Verifique e tente novamente."
     });
   }
 
@@ -169,14 +168,14 @@ export const register = async (req: Request, res: Response) => {
   if (!passwordValidation.isValid) {
     logger.warn(`CONTROL-AUTH - Registro falhou: Senha não atende aos requisitos`);
     return res.status(400).json({
-      message: "Erro de validação",
+      error: "A senha não atende aos requisitos de segurança.",
       details: passwordValidation.errors
     });
   }
 
   const sanitizedEmail = sanitizeInput(email);
   const sanitizedName = sanitizeInput(name);
-  
+
   logger.info(`CONTROL-AUTH - Tentativa de registro com o email: ${sanitizedEmail}`);
 
   try {
@@ -184,9 +183,8 @@ export const register = async (req: Request, res: Response) => {
     const existingUser = await findUserByEmail(sanitizedEmail);
     if (existingUser) {
       logger.warn(`CONTROL-AUTH - Registro falhou: Usuário já existe: ${sanitizedEmail}`);
-      return res.status(409).json({ 
-        message: "Erro de validação",
-        details: ["User already exists"]
+      return res.status(409).json({
+        error: "Este email já está cadastrado. Tente fazer login ou use outro email."
       });
     }
 
@@ -201,18 +199,17 @@ export const register = async (req: Request, res: Response) => {
     logger.error(
       `CONTROL-AUTH - Detalhes do erro: ${(error as Error).message}`
     );
-    
+
     // Retornar 400 para erros de validação conhecidos em vez de 500
-    if ((error as Error).message.includes('validation') || 
+    if ((error as Error).message.includes('validation') ||
         (error as Error).message.includes('required') ||
         (error as Error).message.includes('duplicate')) {
-      return res.status(400).json({ 
-        message: "Erro de validação",
-        details: [(error as Error).message]
+      return res.status(400).json({
+        error: "Erro ao processar os dados. Verifique as informações e tente novamente."
       });
     }
-    
-    res.status(500).json({ message: "Internal server error" });
+
+    res.status(500).json({ error: "Erro interno do servidor. Tente novamente mais tarde." });
   }
 };
 
@@ -223,30 +220,30 @@ export const register = async (req: Request, res: Response) => {
 export const me = async (req: Request, res: Response) => {
   try {
     // Token from httpOnly cookie or Authorization header
-    const accessToken = req.cookies?.[ACCESS_TOKEN_COOKIE] || 
+    const accessToken = req.cookies?.[ACCESS_TOKEN_COOKIE] ||
       req.headers.authorization?.replace('Bearer ', '');
 
     if (!accessToken) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "Not authenticated" 
+      return res.status(401).json({
+        success: false,
+        message: "Not authenticated"
       });
     }
 
     const decoded = await verifyAccessToken(accessToken);
     if (!decoded || !decoded.id) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "Invalid token" 
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token"
       });
     }
 
     // Get user from database using ID
     const user = await findUserById(decoded.id);
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "User not found" 
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
       });
     }
 
@@ -263,9 +260,9 @@ export const me = async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error(`CONTROL-AUTH - Error getting user info: ${(error as Error).message}`);
-    res.status(401).json({ 
-      success: false, 
-      message: "Authentication failed" 
+    res.status(401).json({
+      success: false,
+      message: "Authentication failed"
     });
   }
 };
@@ -278,17 +275,17 @@ export const refresh = async (req: Request, res: Response) => {
     const refreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE] || req.body.refreshToken;
 
     if (!refreshToken) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "Refresh token required" 
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token required"
       });
     }
 
     const decoded = await verifyAccessToken(refreshToken);
     if (!decoded || !decoded.id) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "Invalid refresh token" 
+      return res.status(401).json({
+        success: false,
+        message: "Invalid refresh token"
       });
     }
 
@@ -313,9 +310,9 @@ export const refresh = async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error(`CONTROL-AUTH - Error refreshing token: ${(error as Error).message}`);
-    res.status(401).json({ 
-      success: false, 
-      message: "Token refresh failed" 
+    res.status(401).json({
+      success: false,
+      message: "Token refresh failed"
     });
   }
 };
@@ -341,18 +338,18 @@ export const logout = async (req: Request, res: Response) => {
     res.clearCookie(REFRESH_TOKEN_COOKIE, getAuthCookieOptions());
 
     logger.info(`CONTROL-AUTH - User logged out`);
-    res.status(200).json({ 
-      success: true, 
-      message: "Logged out successfully" 
+    res.status(200).json({
+      success: true,
+      message: "Logged out successfully"
     });
   } catch (error) {
     logger.error(`CONTROL-AUTH - Error during logout: ${(error as Error).message}`);
     // Still clear cookies even if blacklisting fails
     res.clearCookie(ACCESS_TOKEN_COOKIE, getAuthCookieOptions());
     res.clearCookie(REFRESH_TOKEN_COOKIE, getAuthCookieOptions());
-    res.status(200).json({ 
-      success: true, 
-      message: "Logged out" 
+    res.status(200).json({
+      success: true,
+      message: "Logged out"
     });
   }
 };

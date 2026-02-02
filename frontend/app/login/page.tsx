@@ -25,8 +25,20 @@ function LoginForm() {
     try {
       await login(email, password);
       router.push(callbackUrl);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao fazer login. Verifique suas credenciais.');
+    } catch (err: unknown) {
+      // Extrair mensagem de erro amigável da API
+      let errorMessage = 'Erro ao fazer login. Verifique suas credenciais.';
+
+      if (err && typeof err === 'object') {
+        const apiError = err as { data?: { error?: string }; message?: string };
+        if (apiError.data?.error) {
+          errorMessage = apiError.data.error;
+        } else if (apiError.message) {
+          errorMessage = apiError.message;
+        }
+      }
+
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

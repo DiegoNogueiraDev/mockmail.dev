@@ -156,7 +156,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Erro ao fazer login');
+        // Usar data.error (novo padrão PT-BR) ou data.message (fallback)
+        throw new Error(data.error || data.message || 'Erro ao fazer login');
       }
 
       // Extrair dados do usuário
