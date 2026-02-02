@@ -5,16 +5,18 @@ Sistema de email temporário: API + Dashboard + Processador de emails.
 
 ## Estrutura
 ```
-backend/src/      → Backend Express/TS (porta 3000/3010)
-
-frontend/app/     → Dashboard Next.js 15 (porta 3001/3011)
-email-processor/  → Python processor
+backend/          → API Express/TypeScript (porta 3000/3010)
+frontend/         → Dashboard Next.js 15 (porta 3001/3011)
+email-processor/  → Processador Node.js
+scripts/          → Scripts de deploy e utilitários
+server-config/    → Nginx, Postfix, systemd
+docs/             → Documentação
 ```
 
 ## Fluxo de Email
-`Postfix → email-handler.sh → FIFO → email_processor.py → API → MongoDB`
+`Postfix → email-handler.sh → FIFO → emailProcessor.ts → API → MongoDB`
 
-## Arquivos Críticos por Módulo
+## Arquivos Críticos
 
 ### Backend (backend/src/)
 | Tipo | Arquivos |
@@ -22,7 +24,7 @@ email-processor/  → Python processor
 | Controllers | `controllers/auth.controller.ts`, `controllers/mail.controller.ts` |
 | Services | `services/email.service.ts`, `services/user.service.ts` |
 | Models | `models/Email.ts`, `models/EmailBox.ts`, `models/User.ts` |
-| Routes | `routes/router.ts` (agregador) |
+| Routes | `routes/router.ts` |
 
 ### Frontend (frontend/)
 | Tipo | Arquivos |
@@ -32,18 +34,15 @@ email-processor/  → Python processor
 
 ## Comandos Essenciais
 ```bash
-# Infraestrutura (MongoDB, Redis, PostgreSQL)
-./deploy-docker.sh --env=homologacao
+# Infraestrutura (MongoDB, Redis)
+./scripts/deploy-docker.sh --env=producao
 
 # Serviços (API + Frontend via PM2)
-./deploy.sh --env=homologacao
+./deploy.sh --env=producao
 
 # Dev local
 cd backend && npm run dev
 cd frontend && npm run dev
-
-# Testes
-cd backend && npm test
 ```
 
 ## Padrões do Código
@@ -55,21 +54,11 @@ cd backend && npm test
 ## Instruções para Claude
 
 ### Economia de Tokens
-1. **Use memórias Serena** antes de explorar código
-2. **Leia símbolos específicos** com `find_symbol` ao invés de arquivos inteiros
-3. **Use `get_symbols_overview`** para entender estrutura antes de ler bodies
+1. Use memórias Serena antes de explorar código
+2. Leia símbolos específicos com `find_symbol`
+3. Use `get_symbols_overview` para entender estrutura
 
-### Fluxo de Task
-1. Consulte memórias relevantes (`list_memories` → `read_memory`)
-2. Use busca simbólica para localizar código
-3. Edite com `replace_symbol_body` ou `replace_content`
-4. Atualize memórias se descobrir algo novo
-
-### Memórias Disponíveis
-- `architecture-overview.md` - Visão geral da arquitetura
-- `api-structure.md` - Detalhes do backend
-- `watch-structure.md` - Detalhes do dashboard
-- `commands-and-scripts.md` - Comandos úteis
-- evite regressões de funcionalidades do projeto
-- Nunca abrir novos processos em novas portas, sempre se atentar as portas 3000 e 3001. Caso estejam ocupadas, os processos envolvidos devem ser encerrados e os serviços reiniciados. Não devemos fazer alterações no código sem sentido, só por que processos estão ocupando portas que já estão reservadas.
-- Não regrida funcionalidades.
+### Regras Importantes
+- Nunca abrir processos em novas portas (use 3000 e 3001)
+- Não regrida funcionalidades
+- Evite alterações desnecessárias no código

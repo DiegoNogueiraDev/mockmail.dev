@@ -173,3 +173,18 @@ coverage/
 *.backup.*
 .deploy-backups/
 backend/package-lock.json
+fix.txt
+*.bak
+
+# ====================
+# BACKUP DIRECTORIES (não devem ir para o repo)
+# ====================
+database-backup-hml/
+config/
+backup-servidor-producao/
+
+# ====================
+# LEGACY (removidos do projeto)
+# ====================
+server-config/haproxy/
+security-scripts/
