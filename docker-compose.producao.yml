@@ -1,0 +1,115 @@
+# =============================================================================
+# Docker Compose - MockMail.dev (Produção) - INFRAESTRUTURA
+# =============================================================================
+#
+# Apenas serviços de infraestrutura (bancos de dados)
+# API e Frontend são gerenciados via PM2 (./deploy.sh)
+#
+# Portas Produção (localhost only para segurança):
+#   MongoDB:    27017
+#   Redis:      6379
+#
+# Uso:
+#   ./deploy-docker.sh --env=producao        # Subir infra
+#   ./deploy-docker.sh --env=producao --down # Parar infra
+#   ./deploy.sh --env=producao               # Subir API/Frontend via PM2
+#
+# IMPORTANTE: Configure o arquivo .env antes de iniciar!
+#
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # MongoDB
+  # ===========================================================================
+  mongodb:
+    image: mongo:7.0
+    container_name: mockmail-mongodb
+    restart: always
+    ports:
+      - "127.0.0.1:27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD é obrigatório}
+      MONGO_INITDB_DATABASE: mockmail
+    volumes:
+      - mongodb_data:/data/db
+      - ./database-backup:/backup
+    networks:
+      - mockmail-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "environment=producao"
+
+  # ===========================================================================
+  # Redis
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: mockmail-redis
+    restart: always
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD é obrigatório}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - mockmail-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "environment=producao"
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  mongodb_data:
+    name: mockmail_mongodb_data
+  redis_data:
+    name: mockmail_redis_data
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  mockmail-network:
+    name: mockmail-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

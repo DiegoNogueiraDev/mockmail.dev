@@ -1,0 +1,70 @@
+# Nome do servidor
+myhostname = mockmail.dev
+myorigin = $myhostname
+
+# Domínios que o servidor gerencia
+mydestination = $myhostname, localhost.$mydomain, localhost, $mydomain
+
+# Redes confiáveis (somente localhost)
+mynetworks = 127.0.0.0/8 [::1]/128
+
+# Interfaces que o Postfix deve escutar
+inet_interfaces = all
+inet_protocols = ipv4
+
+# Relay (pode deixar vazio ou configurar se usar outro servidor)
+relayhost = 
+
+# Habilitar TLS para conexões seguras
+smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
+smtpd_use_tls=yes
+
+smtpd_tls_security_level = may
+smtp_tls_security_level = may
+smtpd_tls_cert_file = /etc/ssl/certs/postfix.pem
+smtpd_tls_key_file = /etc/ssl/private/postfix.key
+smtpd_tls_protocols = !SSLv2, !SSLv3, TLSv1.2, TLSv1.3
+smtpd_tls_mandatory_protocols = !SSLv2, !SSLv3
+smtp_tls_protocols = !SSLv2, !SSLv3
+smtpd_tls_ciphers = high
+smtp_tls_ciphers = high
+smtpd_tls_eecdh_grade = strong
+
+# Segurança adicional
+smtp_tls_CAfile=/etc/ssl/certs/ca-certificates.crt
+
+# Configurações de Relay e Regras
+smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+smtpd_recipient_restrictions =
+    permit_mynetworks,
+    permit_sasl_authenticated,
+    reject_unauth_destination,
+    reject_rbl_client bl.spamcop.net,
+    reject_rbl_client dnsbl.sorbs.net,
+    reject_rbl_client b.barracudacentral.org
+
+# Desativar verificações locais opcionais (suprime erros relacionados a NIS)
+local_recipient_maps =
+
+# Opcional: Limitar tamanho de mensagens (em bytes)
+message_size_limit = 10240000
+
+# Configurações do OpenDKIM
+smtpd_milters = inet:localhost:8891
+non_smtpd_milters = inet:localhost:8891
+milter_default_action = accept
+milter_protocol = 2
+
+# Configuração de logs
+maillog_file = /var/log/mail.log
+
+# Virtual catch-all alias
+transport_maps = hash:/etc/postfix/transport
+luser_relay = email-processord
+
+# Cortex
+virtual_alias_domains = cortexflow.space
+virtual_alias_maps = hash:/etc/postfix/virtual
+smtpd_sasl_type = dovecot
+smtpd_sasl_path = private/auth
+smtpd_sasl_auth_enable = yes

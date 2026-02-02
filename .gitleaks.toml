@@ -1,0 +1,118 @@
+# ============================================
+# Gitleaks Configuration for MockMail.dev
+# Detects secrets before they are committed
+# ============================================
+# Run: gitleaks detect --source . --config .gitleaks.toml
+
+title = "MockMail.dev Secret Detection"
+
+# ====================
+# CUSTOM RULES
+# ====================
+
+[[rules]]
+id = "jwt-secret"
+description = "JWT Secret"
+regex = '''(?i)(jwt[_-]?secret|jwt[_-]?key)\s*[=:]\s*['"][a-zA-Z0-9+/=]{20,}['"]'''
+tags = ["key", "jwt"]
+
+[[rules]]
+id = "mongodb-uri-with-password"
+description = "MongoDB URI with embedded password"
+regex = '''mongodb(\+srv)?://[^:]+:[^@]{8,}@'''
+tags = ["database", "mongodb"]
+
+[[rules]]
+id = "redis-password"
+description = "Redis Password"
+regex = '''(?i)redis[_-]?(password|pass|pwd)\s*[=:]\s*['"][^'"]{8,}['"]'''
+tags = ["database", "redis"]
+
+[[rules]]
+id = "api-key-generic"
+description = "Generic API Key"
+regex = '''(?i)(api[_-]?key|apikey)\s*[=:]\s*['"][a-zA-Z0-9]{20,}['"]'''
+tags = ["key", "api"]
+
+[[rules]]
+id = "private-key-pem"
+description = "Private Key (PEM format)"
+regex = '''-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'''
+tags = ["key", "private"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key ID"
+regex = '''AKIA[0-9A-Z]{16}'''
+tags = ["aws", "key"]
+
+[[rules]]
+id = "aws-secret-key"
+description = "AWS Secret Access Key"
+regex = '''(?i)aws[_-]?secret[_-]?access[_-]?key\s*[=:]\s*['"][a-zA-Z0-9/+=]{40}['"]'''
+tags = ["aws", "key"]
+
+[[rules]]
+id = "github-token"
+description = "GitHub Token"
+regex = '''ghp_[a-zA-Z0-9]{36}'''
+tags = ["github", "token"]
+
+[[rules]]
+id = "slack-webhook"
+description = "Slack Webhook URL"
+regex = '''https://hooks\.slack\.com/services/T[a-zA-Z0-9_]{8,}/B[a-zA-Z0-9_]{8,}/[a-zA-Z0-9_]{24}'''
+tags = ["slack", "webhook"]
+
+[[rules]]
+id = "sendgrid-api-key"
+description = "SendGrid API Key"
+regex = '''SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}'''
+tags = ["sendgrid", "api"]
+
+[[rules]]
+id = "stripe-api-key"
+description = "Stripe API Key"
+regex = '''(sk|pk)_(test|live)_[a-zA-Z0-9]{24,}'''
+tags = ["stripe", "api"]
+
+[[rules]]
+id = "password-in-url"
+description = "Password in URL"
+regex = '''://[^:]+:[^@]{8,}@'''
+tags = ["password", "url"]
+
+[[rules]]
+id = "base64-encoded-secret"
+description = "Base64 encoded secret (long)"
+regex = '''(?i)(secret|password|key|token)\s*[=:]\s*['"][A-Za-z0-9+/]{50,}={0,2}['"]'''
+tags = ["base64", "secret"]
+
+# ====================
+# ALLOWLIST (False Positives)
+# ====================
+
+[allowlist]
+description = "Global allowlist"
+
+# Allow example files
+paths = [
+  '''\.env\.example$''',
+  '''\.env\.[a-z]+\.example$''',
+  '''README\.md$''',
+  '''INSTALLATION\.md$''',
+  '''docs/.*\.md$''',
+  '''\.gitleaks\.toml$''',
+]
+
+# Allow placeholder patterns
+regexes = [
+  '''SUBSTITUA_POR_''',
+  '''your[_-]?secret[_-]?here''',
+  '''<your[_-]?.*>''',
+  '''YOUR_.*_HERE''',
+  '''change[_-]?me''',
+  '''example\.com''',
+  '''localhost''',
+  '''127\.0\.0\.1''',
+]

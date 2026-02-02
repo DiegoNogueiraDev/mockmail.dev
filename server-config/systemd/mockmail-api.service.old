@@ -1,0 +1,33 @@
+[Unit]
+Description=MockMail API Service
+Documentation=https://github.com/DiegoNogueiraDev/mockmail.dev
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=anaopcd
+Group=anaopcd
+WorkingDirectory=/opt/mockmail-api
+Environment=NODE_ENV=production
+Environment=PORT=3000
+EnvironmentFile=/opt/mockmail-api/.env
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/node /opt/mockmail-api/dist/server.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mockmail-api
+TimeoutStartSec=60
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/mockmail-api/logs
+ReadWritePaths=/tmp
+
+[Install]
+WantedBy=multi-user.target

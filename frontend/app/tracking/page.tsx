@@ -1,0 +1,405 @@
+'use client'
+
+import React, { useState } from 'react';
+import { Search, RefreshCw, Mail, AlertCircle, Info, ChevronLeft, ChevronRight, Calendar, Filter, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+import { Toaster } from 'react-hot-toast';
+import EmailFlowVisualization from '@/components/EmailFlowVisualization';
+import useEmailTracking from '@/hooks/useEmailTracking';
+
+const EmailTrackingPage: React.FC = () => {
+  const [searchEmail, setSearchEmail] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [days, setDays] = useState('7');
+  const [limit, setLimit] = useState('20');
+  const [showFilters, setShowFilters] = useState(false);
+  
+  const { 
+    data: emailStatuses, 
+    loading, 
+    error, 
+    total,
+    page,
+    totalPages,
+    searchEmail: performSearch,
+    clearData 
+  } = useEmailTracking();
+
+  const handleSearch = async (newPage = 1) => {
+    if (!searchEmail.trim()) {
+      return;
+    }
+
+    const options = {
+      ...(startDate && { startDate }),
+      ...(endDate && { endDate }),
+      ...(days && !startDate && !endDate && { days: parseInt(days) }),
+      limit: parseInt(limit),
+      page: newPage,
+    };
+
+    await performSearch(searchEmail, options);
+  };
+
+  const handleClear = () => {
+    setSearchEmail('');
+    setStartDate('');
+    setEndDate('');
+    setDays('7');
+    setLimit('20');
+    setShowFilters(false);
+    clearData();
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      handleSearch(newPage);
+    }
+  };
+
+  // Calcular range de páginas para exibir
+  const getPageNumbers = () => {
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+
+    for (let i = Math.max(2, page - delta); i <= Math.min(totalPages - 1, page + delta); i++) {
+      range.push(i);
+    }
+
+    if (page - delta > 2) {
+      rangeWithDots.push(1, '...');
+    } else {
+      rangeWithDots.push(1);
+    }
+
+    rangeWithDots.push(...range);
+
+    if (page + delta < totalPages - 1) {
+      rangeWithDots.push('...', totalPages);
+    } else {
+      rangeWithDots.push(totalPages);
+    }
+
+    return rangeWithDots.filter((item, index, array) => array.indexOf(item) === index);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Toaster position="top-right" />
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Page Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center mb-4">
+                <Link 
+                  href="/"
+                  className="flex items-center px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-gray-300 rounded-md transition-colors mr-4"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Voltar ao Dashboard
+                </Link>
+              </div>
+              <h1 className="text-3xl font-bold text-gray-900">Rastreamento de Emails</h1>
+              <p className="text-gray-600 mt-2">
+                Busque e analise o fluxo de processamento de emails específicos
+              </p>
+            </div>
+            <div className="flex items-center space-x-2 text-sm text-gray-500">
+              <Mail className="h-4 w-4" />
+              <span>Sistema de tracking em tempo real</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Search Form */}
+        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Pesquisar Email
+            </h2>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center px-3 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-md transition-colors"
+            >
+              <Filter className="w-4 h-4 mr-2" />
+              Filtros
+            </button>
+          </div>
+          
+          {/* Basic Search */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">
+            <div className="lg:col-span-2">
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                Endereço de Email (From)
+              </label>
+              <div className="relative">
+                <input
+                  type="email"
+                  id="email"
+                  value={searchEmail}
+                  onChange={(e) => setSearchEmail(e.target.value)}
+                  placeholder="Email de login (Caixa principal)"
+                  className="w-full px-4 py-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors text-gray-900 placeholder-gray-500"
+                  required
+                />
+                <Search className="absolute left-3 top-3.5 h-5 w-5 text-gray-600" />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="days" className="block text-sm font-medium text-gray-700 mb-2">
+                Período (dias)
+              </label>
+              <select
+                id="days"
+                value={days}
+                onChange={(e) => setDays(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900"
+              >
+                <option value="1">Último dia</option>
+                <option value="3">Últimos 3 dias</option>
+                <option value="7">Últimos 7 dias</option>
+                <option value="15">Últimos 15 dias</option>
+                <option value="30">Últimos 30 dias</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="limit" className="block text-sm font-medium text-gray-700 mb-2">
+                Resultados por página
+              </label>
+              <select
+                id="limit"
+                value={limit}
+                onChange={(e) => setLimit(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900"
+              >
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Advanced Filters */}
+          {showFilters && (
+            <div className="border-t pt-4 mb-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-2">
+                    <Calendar className="w-4 h-4 inline mr-1" />
+                    Data Inicial
+                  </label>
+                  <input
+                    type="datetime-local"
+                    id="startDate"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors text-gray-900"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-2">
+                    <Calendar className="w-4 h-4 inline mr-1" />
+                    Data Final
+                  </label>
+                  <input
+                    type="datetime-local"
+                    id="endDate"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors text-gray-900"
+                  />
+                </div>
+              </div>
+              
+              <div className="mt-3 text-sm text-gray-600">
+                <strong>Nota:</strong> Datas específicas têm prioridade sobre o filtro de período em dias.
+              </div>
+            </div>
+          )}
+
+          {/* Buttons */}
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => handleSearch(1)}
+              disabled={loading || !searchEmail.trim()}
+              className="flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {loading ? (
+                <RefreshCw className="animate-spin h-5 w-5 mr-2" />
+              ) : (
+                <Search className="h-5 w-5 mr-2" />
+              )}
+              {loading ? 'Buscando...' : 'Buscar'}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClear}
+              className="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+            >
+              Limpar
+            </button>
+          </div>
+
+          {/* Info Box */}
+          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-start space-x-3">
+              <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-blue-800">
+                <p className="font-medium mb-1">Dicas de uso:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Por padrão, mostra apenas os últimos 7 dias para melhor performance</li>
+                  <li>Use filtros específicos de data para períodos customizados</li>
+                  <li>Limite máximo: 100 emails por página e 30 dias por consulta</li>
+                  <li>Verde = sucesso, Vermelho = erro, Amarelo = aviso, Cinza = pendente</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Results Summary */}
+        {total > 0 && (
+          <div className="mb-6 flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Mostrando <span className="font-medium">{emailStatuses.length}</span> de{' '}
+              <span className="font-medium">{total}</span> emails
+              {totalPages > 1 && (
+                <span> - Página <span className="font-medium">{page}</span> de <span className="font-medium">{totalPages}</span></span>
+              )}
+            </p>
+            
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handlePageChange(page - 1)}
+                  disabled={page <= 1 || loading}
+                  className="p-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                
+                {getPageNumbers().map((pageNum, index) => (
+                  pageNum === '...' ? (
+                    <span key={index} className="px-3 py-2 text-gray-500">...</span>
+                  ) : (
+                    <button
+                      key={index}
+                      onClick={() => handlePageChange(pageNum as number)}
+                      disabled={loading}
+                      className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        pageNum === page
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                ))}
+                
+                <button
+                  onClick={() => handlePageChange(page + 1)}
+                  disabled={page >= totalPages || loading}
+                  className="p-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
+            <div className="flex items-start space-x-3">
+              <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <h3 className="text-sm font-medium text-red-800">Erro no rastreamento</h3>
+                <p className="text-sm text-red-700 mt-1">{error}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Results */}
+        <div className="space-y-6">
+          {emailStatuses.length > 0 ? (
+            emailStatuses.map((emailStatus) => (
+              <EmailFlowVisualization
+                key={emailStatus.id}
+                emailStatus={emailStatus}
+                className="transform transition-all hover:shadow-xl"
+              />
+            ))
+          ) : (
+            !loading && !error && searchEmail && (
+              <div className="text-center py-12 bg-white rounded-lg shadow-sm border border-gray-200">
+                <Mail className="mx-auto h-12 w-12 text-gray-600" />
+                <h3 className="mt-4 text-lg font-medium text-gray-900">Nenhum email encontrado</h3>
+                <p className="mt-2 text-sm text-gray-500">
+                  Não foram encontrados emails para o endereço especificado no período selecionado.
+                </p>
+                <p className="mt-1 text-xs text-gray-600">
+                  Tente expandir o período de busca ou verificar o endereço de email.
+                </p>
+              </div>
+            )
+          )}
+        </div>
+
+        {/* Loading State */}
+        {loading && (
+          <div className="text-center py-12 bg-white rounded-lg shadow-sm border border-gray-200">
+            <RefreshCw className="animate-spin mx-auto h-12 w-12 text-blue-600" />
+            <h3 className="mt-4 text-lg font-medium text-gray-900">Buscando emails...</h3>
+            <p className="mt-2 text-sm text-gray-500">
+              Analisando logs e processando dados...
+            </p>
+          </div>
+        )}
+
+        {/* Bottom Pagination */}
+        {totalPages > 1 && emailStatuses.length > 0 && (
+          <div className="mt-8 flex justify-center">
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => handlePageChange(page - 1)}
+                disabled={page <= 1 || loading}
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Anterior
+              </button>
+              
+              <span className="px-4 py-2 text-sm text-gray-600 bg-gray-50 rounded-md">
+                Página {page} de {totalPages}
+              </span>
+              
+              <button
+                onClick={() => handlePageChange(page + 1)}
+                disabled={page >= totalPages || loading}
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center transition-colors"
+              >
+                Próxima
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default EmailTrackingPage;

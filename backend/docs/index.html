@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MockMail API Documentation</title>
+  <!-- Prism CSS (realce de sintaxe) -->
+  <link
+    href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css"
+    rel="stylesheet"
+  />
+  <link
+    href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <header class="header">
+    <img src="./img/logo.png" alt="MockMail Logo" class="logo" />
+  </header>
+
+  <nav class="nav">
+    <ul class="nav-list">
+      <li class="nav-item">
+        <a href="#introduction">Introdução</a>
+      </li>
+      <li class="nav-item">
+        <a href="#authentication">Autenticação</a>
+      </li>
+      <li class="nav-item">
+        <a href="#emails">Emails</a>
+      </li>
+    </ul>
+  </nav>
+
+  <main class="container">
+    <!-- Seção de Introdução -->
+    <section id="introduction" class="section">
+      <h2>Introdução</h2>
+      <p>
+        O <strong>MockMail</strong> é um serviço (SaaS) de caixas de email
+        temporárias, com foco em testes e simulações de confirmações de clientes
+        em ambientes de desenvolvimento ou staging. Nossa plataforma permite que
+        você crie e gerencie endereços de email que expiram em até 24 horas, sem
+        limite diário de criação de caixas.
+      </p>
+      <p>
+        Atualmente, estão disponíveis apenas as funções básicas de integração,
+        permitindo que sistemas externos enviem mensagens de teste para caixas
+        temporárias. Dessa forma, é possível simular fluxos de confirmação e
+        envio de notificações sem precisar criar caixas de email definitivas ou
+        consumir serviços de terceiros para isso.
+      </p>
+      <p>
+        Toda a comunicação é feita via HTTP em formato REST, e a API é
+        responsável por vincular o email de origem ao usuário que já tenha sido
+        criado através do endpoint <code>/auth/register</code>. Para que o
+        processamento de emails funcione corretamente, é indispensável incluir o
+        token JWT no header (<code>Bearer</code>) em cada requisição.
+      </p>
+      <p>
+        Em caso de dúvidas, oferecemos suporte através de nosso
+        <a href="https://discord.gg/KdMBVPAP97" target="_blank">Discord</a>.
+      </p>
+      <p>
+        Base URL: <code>https://api.mockmail.dev/api</code>
+      </p>
+    </section>
+
+    <!-- Seção de Autenticação -->
+    <section id="authentication" class="section">
+      <h2>Autenticação</h2>
+
+      <!-- /auth/register -->
+      <div class="endpoint">
+        <div class="endpoint-header">
+          <span class="method">POST</span>
+          <code>/auth/register</code>
+        </div>
+        <p>
+          Este endpoint registra um novo usuário no sistema. Após o registro, você
+          estará apto a enviar e processar emails temporários, vinculando as
+          mensagens à sua conta.
+        </p>
+
+        <h3>Request Body:</h3>
+        <pre><code class="language-json">{
+  "email": "seu.email@exemplo.com",
+  "password": "sua-senha"
+}</code></pre>
+
+        <h3>Resposta:</h3>
+        <pre><code class="language-json">{
+  "id": "user_123",
+  "email": "seu.email@exemplo.com",
+  "created_at": "2024-01-22T12:00:00Z"
+}</code></pre>
+
+        <h3>Exemplos:</h3>
+
+        <h4>cURL:</h4>
+        <pre><code class="language-bash">curl -X POST \
+  'https://api.mockmail.dev/api/auth/register' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "email": "seu.email@exemplo.com",
+    "password": "sua-senha"
+}'</code></pre>
+
+        <h4>Python (requests):</h4>
+        <pre><code class="language-python">import requests
+
+data = {
+  'email': 'seu.email@exemplo.com',
+  'password': 'sua-senha'
+}
+
+response = requests.post(
+  'https://api.mockmail.dev/api/auth/register',
+  json=data
+)
+
+if response.status_code == 201:
+  user = response.json()
+  print(user)
+else:
+  print("Erro ao registrar usuário:", response.text)</code></pre>
+
+        <h4>JavaScript (fetch):</h4>
+        <pre><code class="language-javascript">const register = async () => {
+  const response = await fetch('https://api.mockmail.dev/api/auth/register', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      email: 'seu.email@exemplo.com',
+      password: 'sua-senha'
+    })
+  });
+
+  if (response.ok) {
+    const user = await response.json();
+    console.log(user);
+  } else {
+    const errorText = await response.text();
+    console.error('Erro ao registrar usuário:', errorText);
+  }
+};</code></pre>
+      </div>
+
+      <!-- /auth/login -->
+      <div class="endpoint">
+        <div class="endpoint-header">
+          <span class="method">POST</span>
+          <code>/auth/login</code>
+        </div>
+        <p>
+          Realiza login com o email e senha fornecidos, retornando um token JWT
+          para autenticação. Você deve incluir esse token no header
+          <code>Authorization: Bearer &lt;token&gt;</code> em todas as requisições
+          subsequentes para que sejam vinculadas ao seu usuário.
+        </p>
+
+        <h3>Request Body:</h3>
+        <pre><code class="language-json">{
+  "email": "seu.email@exemplo.com",
+  "password": "sua-senha"
+}</code></pre>
+
+        <h3>Resposta:</h3>
+        <pre><code class="language-json">{
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "expires_at": "2024-01-23T12:00:00Z"
+}</code></pre>
+
+        <h3>Exemplos:</h3>
+
+        <h4>cURL:</h4>
+        <pre><code class="language-bash">curl -X POST \
+  'https://api.mockmail.dev/api/auth/login' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "email": "seu.email@exemplo.com",
+    "password": "sua-senha"
+}'</code></pre>
+
+        <h4>Python (requests):</h4>
+        <pre><code class="language-python">import requests
+
+data = {
+  'email': 'seu.email@exemplo.com',
+  'password': 'sua-senha'
+}
+
+response = requests.post(
+  'https://api.mockmail.dev/api/auth/login',
+  json=data
+)
+
+if response.status_code == 200:
+  auth_data = response.json()
+  token = auth_data['token']
+  print("Token de acesso:", token)
+else:
+  print("Erro ao efetuar login:", response.text)</code></pre>
+
+        <h4>JavaScript (fetch):</h4>
+        <pre><code class="language-javascript">const login = async () => {
+  const response = await fetch('https://api.mockmail.dev/api/auth/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      email: 'seu.email@exemplo.com',
+      password: 'sua-senha'
+    })
+  });
+
+  if (response.ok) {
+    const { token, expires_at } = await response.json();
+    console.log("Token:", token);
+    console.log("Expira em:", expires_at);
+  } else {
+    const errorText = await response.text();
+    console.error('Erro ao efetuar login:', errorText);
+  }
+};</code></pre>
+      </div>
+    </section>
+
+    <!-- Seção de Emails -->
+    <section id="emails" class="section">
+      <h2>Emails</h2>
+      <p>
+        Esta seção descreve as rotas disponíveis para gerenciar as caixas de
+        email temporárias do MockMail. Por padrão, cada caixa de email criada
+        expira em 24 horas. Os emails são processados no momento em que chegam à
+        API, vinculados ao usuário que enviou a requisição, conforme o token JWT
+        fornecido.
+      </p>
+
+      <!-- /mail/process -->
+      <div class="endpoint">
+        <div class="endpoint-header">
+          <span class="method">POST</span>
+          <code>/mail/process</code>
+        </div>
+        <p>
+          Processa um novo email recebido no sistema. Ao receber este POST, a API
+          vincula o email <strong>de origem</strong> ao usuário que efetuou a
+          chamada, verificando o cabeçalho
+          <code>Authorization: Bearer &lt;seu-token-jwt&gt;</code>. Se a
+          verificação for bem-sucedida, a mensagem será armazenada e ficará
+          disponível para consultas posteriores.
+        </p>
+
+        <h3>Headers:</h3>
+        <ul>
+          <li>
+            <span class="parameter">Authorization</span> Bearer
+            &lt;seu-token-jwt&gt;
+          </li>
+          <li>
+            <span class="parameter">Content-Type</span> application/json
+          </li>
+        </ul>
+
+        <h3>Request Body:</h3>
+        <pre><code class="language-json">{
+  "from": "TESTE <remetente@exemplo.com>",
+  "to": "destinatario@exemplo.com",
+  "subject": "Assunto do Email",
+  "body": "<html><body><h1>Conteúdo do Email</h1></body></html>",
+  "id": "123456",
+  "date": "2024-01-22T12:00:00Z",
+  "content_type": "text/html",
+  "processed_at": "2024-01-22T12:00:01Z"
+}</code></pre>
+
+        <h3>Exemplos:</h3>
+
+        <h4>cURL:</h4>
+        <pre><code class="language-bash">curl -X POST \
+  'https://api.mockmail.dev/api/mail/process' \
+  -H 'Authorization: Bearer seu-token-jwt' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "from": "TESTE <remetente@exemplo.com>",
+    "to": "destinatario@exemplo.com",
+    "subject": "Assunto do Email",
+    "body": "<html><body><h1>Conteúdo do Email</h1></body></html>",
+    "id": "123456",
+    "date": "2024-01-22T12:00:00Z",
+    "content_type": "text/html",
+    "processed_at": "2024-01-22T12:00:01Z"
+}'</code></pre>
+
+        <h4>Python (requests):</h4>
+        <pre><code class="language-python">import requests
+
+headers = {
+  'Authorization': 'Bearer seu-token-jwt',
+  'Content-Type': 'application/json'
+}
+
+data = {
+  "from": "TESTE <remetente@exemplo.com>",
+  "to": "destinatario@exemplo.com",
+  "subject": "Assunto do Email",
+  "body": "<html><body><h1>Conteúdo do Email</h1></body></html>",
+  "id": "123456",
+  "date": "2024-01-22T12:00:00Z",
+  "content_type": "text/html",
+  "processed_at": "2024-01-22T12:00:01Z"
+}
+
+response = requests.post(
+  'https://api.mockmail.dev/api/mail/process',
+  headers=headers,
+  json=data
+)
+
+if response.status_code == 200:
+  result = response.json()
+  print("Email processado:", result)
+else:
+  print("Erro ao processar email:", response.text)</code></pre>
+
+        <h4>JavaScript (fetch):</h4>
+        <pre><code class="language-javascript">const processEmail = async () => {
+  const emailData = {
+    from: 'TESTE <remetente@exemplo.com>',
+    to: 'destinatario@exemplo.com',
+    subject: 'Assunto do Email',
+    body: '<html><body><h1>Conteúdo do Email</h1></body></html>',
+    id: '123456',
+    date: '2024-01-22T12:00:00Z',
+    content_type: 'text/html',
+    processed_at: '2024-01-22T12:00:01Z'
+  };
+
+  const response = await fetch('https://api.mockmail.dev/api/mail/process', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer seu-token-jwt',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(emailData)
+  });
+
+  if (response.ok) {
+    const result = await response.json();
+    console.log('Email processado:', result);
+  } else {
+    const errorText = await response.text();
+    console.error('Erro ao processar email:', errorText);
+  }
+};</code></pre>
+      </div>
+
+      <!-- /mail/latest/:address -->
+      <div class="endpoint">
+        <div class="endpoint-header">
+          <span class="method">GET</span>
+          <code>/mail/latest/:address</code>
+        </div>
+        <p>
+          Retorna o email mais recente de uma caixa específica, identificada pelo
+          parâmetro <code>address</code>. Caso desejado, você pode filtrar o
+          remetente com a query string
+          <code>?from=remetente@exemplo.com</code>.
+        </p>
+
+        <h3>Parâmetros:</h3>
+        <ul>
+          <li>
+            <span class="parameter">address</span>: Endereço da caixa de email
+            (path parameter)
+          </li>
+          <li>
+            <span class="parameter">from</span>: Filtrar por remetente
+            (opcional, query parameter)
+          </li>
+        </ul>
+
+        <h3>Headers:</h3>
+        <ul>
+          <li>
+            <span class="parameter">Authorization</span> Bearer
+            &lt;seu-token-jwt&gt;
+          </li>
+        </ul>
+
+        <h3>Exemplos:</h3>
+
+        <h4>cURL:</h4>
+        <pre><code class="language-bash">curl -X GET \
+  'https://api.mockmail.dev/api/mail/latest/destinatario@exemplo.com?from=remetente@exemplo.com' \
+  -H 'Authorization: Bearer seu-token-jwt'</code></pre>
+
+        <h4>Python (requests):</h4>
+        <pre><code class="language-python">import requests
+
+headers = {
+  'Authorization': 'Bearer seu-token-jwt'
+}
+
+params = {
+  'from': 'remetente@exemplo.com'
+}
+
+response = requests.get(
+  'https://api.mockmail.dev/api/mail/latest/destinatario@exemplo.com',
+  headers=headers,
+  params=params
+)
+
+if response.status_code == 200:
+  email = response.json()
+  print("Último email recebido:", email)
+else:
+  print("Erro ao buscar email:", response.text)</code></pre>
+
+        <h4>JavaScript (fetch):</h4>
+        <pre><code class="language-javascript">const getLatestEmail = async () => {
+  const response = await fetch(
+    'https://api.mockmail.dev/api/mail/latest/destinatario@exemplo.com?from=remetente@exemplo.com',
+    {
+      headers: {
+        'Authorization': 'Bearer seu-token-jwt'
+      }
+    }
+  );
+
+  if (response.ok) {
+    const email = await response.json();
+    console.log('Último email recebido:', email);
+  } else {
+    const errorText = await response.text();
+    console.error('Erro ao buscar email:', errorText);
+  }
+};</code></pre>
+      </div>
+    </section>
+
+    <!-- Seção Adicional: Buscar Último Email por Assunto -->
+    <section id="latest-email-by-subject" class="section">
+      <h2>Buscar Último Email por Assunto</h2>
+      <p>
+        Este endpoint permite buscar o último email recebido em uma caixa de
+        email específica, filtrando pelo assunto desejado. Você pode especificar
+        o remetente através da query string.
+      </p>
+
+      <div class="endpoint">
+        <div class="endpoint-header">
+          <span class="method">GET</span>
+          <code>/mail/latest/:address/subject/:subject</code>
+        </div>
+        <p>
+          Retorna o email mais recente de uma caixa específica, identificada pelo
+          parâmetro <code>address</code>, filtrando pelo <code>subject</code>.
+          Caso desejado, você pode filtrar o remetente com a query string
+          <code>?from=remetente@exemplo.com</code>.
+        </p>
+
+        <h3>Parâmetros:</h3>
+        <ul>
+          <li>
+            <span class="parameter">address</span>: Endereço da caixa de email
+            (path parameter)
+          </li>
+          <li>
+            <span class="parameter">subject</span>: Assunto do email a ser
+            buscado (path parameter)
+          </li>
+          <li>
+            <span class="parameter">from</span>: Filtrar por remetente
+            (opcional, query parameter)
+          </li>
+        </ul>
+
+        <h3>Headers:</h3>
+        <ul>
+          <li>
+            <span class="parameter">Authorization</span> Bearer
+            &lt;seu-token-jwt&gt;
+          </li>
+        </ul>
+
+        <h3>Exemplo de Chamada:</h3>
+        <pre><code class="language-bash">curl -X GET \
+  '{{base_url}}/mail/latest/destinatario@exemplo.com/subject/TERROR?from=pao@gmail.com' \
+  -H 'Authorization: Bearer seu-token-jwt'</code></pre>
+
+        <h3>Resposta:</h3>
+        <pre><code class="language-json">{
+  "_id": "679416ba9aff594d5044320c",
+  "from": "pao@gmail.com",
+  "to": "destinatario@exemplo.com",
+  "subject": "Assunto do Email ffffffffff AMOR TERROR BEIJOS",
+  "body": { ... },
+  "createdAt": "2025-01-24T12:39:54.095Z",
+  "updatedAt": "2025-01-24T12:39:54.095Z"
+}</code></pre>
+
+        <h3>Exemplo em Python:</h3>
+        <pre><code class="language-python">import requests
+
+headers = {
+  'Authorization': 'Bearer seu-token-jwt'
+}
+
+response = requests.get(
+  '{{base_url}}/mail/latest/destinatario@exemplo.com/subject/TERROR',
+  headers=headers,
+  params={'from': 'pao@gmail.com'}
+)
+
+if response.status_code == 200:
+  email = response.json()
+  print("Último email recebido:", email)
+else:
+  print("Erro ao buscar email:", response.text)</code></pre>
+
+        <h3>Exemplo em JavaScript (fetch):</h3>
+        <pre><code class="language-javascript">const getLatestEmailBySubject = async () => {
+  const response = await fetch(
+    '{{base_url}}/mail/latest/destinatario@exemplo.com/subject/TERROR?from=pao@gmail.com',
+    {
+      headers: {
+        'Authorization': 'Bearer seu-token-jwt'
+      }
+    }
+  );
+
+  if (response.ok) {
+    const email = await response.json();
+    console.log('Último email recebido:', email);
+  } else {
+    const errorText = await response.text();
+    console.error('Erro ao buscar email:', errorText);
+  }
+};</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <!-- Prism JS (realce de sintaxe) -->
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"
+  ></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"
+  ></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"
+  ></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"
+  ></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"
+  ></script>
+  <script src="script.js"></script>
+</body>
+</html>

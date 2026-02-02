@@ -1,0 +1,259 @@
+// MockMail.dev - Prisma Schema
+// PostgreSQL database with full RBAC, Webhooks, and API Keys support
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  user
+  admin
+  system
+}
+
+enum Permission {
+  read_emails
+  write_emails
+  admin_users
+  admin_system
+}
+
+enum WebhookEvent {
+  email_received
+  email_opened
+  email_clicked
+  box_created
+  box_deleted
+}
+
+enum WebhookStatus {
+  active
+  paused
+  failed
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id          String       @id @default(uuid())
+  email       String       @unique
+  password    String
+  name        String
+  role        UserRole     @default(user)
+  permissions Permission[] @default([read_emails, write_emails])
+  isActive    Boolean      @default(true)
+  lastLogin   DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  emailBoxes EmailBox[]
+  apiKeys    ApiKey[]
+  webhooks   Webhook[]
+  sessions   Session[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@map("sessions")
+}
+
+// ============================================
+// EMAIL MANAGEMENT
+// ============================================
+
+model EmailBox {
+  id          String   @id @default(uuid())
+  address     String   @unique
+  userId      String
+  description String?
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails Email[]
+
+  @@index([userId])
+  @@index([address])
+  @@index([expiresAt])
+  @@map("email_boxes")
+}
+
+model Email {
+  id          String   @id @default(uuid())
+  emailBoxId  String
+  from        String
+  to          String
+  subject     String
+  rawHtml     String
+  plainText   String
+  headers     Json?
+  attachments Json?
+  metadata    Json     @default("{}")
+  contentType String   @default("text/html")
+  token       String?
+  isRead      Boolean  @default(false)
+  receivedAt  DateTime
+  processedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  // Relations
+  emailBox    EmailBox     @relation(fields: [emailBoxId], references: [id], onDelete: Cascade)
+  trackEvents TrackEvent[]
+
+  @@index([emailBoxId])
+  @@index([from])
+  @@index([to])
+  @@index([receivedAt])
+  @@index([isRead])
+  @@map("emails")
+}
+
+model TrackEvent {
+  id        String   @id @default(uuid())
+  emailId   String
+  type      String   // 'open', 'click', 'link'
+  data      Json?    // Additional data (link URL, etc)
+  userAgent String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  email Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("track_events")
+}
+
+// ============================================
+// WEBHOOKS
+// ============================================
+
+model Webhook {
+  id          String        @id @default(uuid())
+  userId      String
+  name        String
+  url         String
+  secret      String        // HMAC secret for signature
+  events      WebhookEvent[]
+  status      WebhookStatus @default(active)
+  headers     Json?         // Custom headers
+  retryCount  Int           @default(3)
+  lastError   String?
+  lastTriggeredAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id           String   @id @default(uuid())
+  webhookId    String
+  event        WebhookEvent
+  payload      Json
+  responseCode Int?
+  responseBody String?
+  duration     Int?     // Response time in ms
+  success      Boolean  @default(false)
+  attempts     Int      @default(1)
+  createdAt    DateTime @default(now())
+
+  // Relations
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([createdAt])
+  @@index([success])
+  @@map("webhook_deliveries")
+}
+
+// ============================================
+// API KEYS
+// ============================================
+
+model ApiKey {
+  id          String       @id @default(uuid())
+  userId      String
+  name        String
+  keyHash     String       @unique  // SHA-256 hash of the key
+  keyPrefix   String       // First 8 chars for identification (e.g., "mm_live_")
+  permissions Permission[] @default([read_emails])
+  scopes      String[]     @default([])  // Optional: specific box IDs
+  rateLimit   Int          @default(1000) // Requests per hour
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  usageCount  Int          @default(0)
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([keyHash])
+  @@index([keyPrefix])
+  @@index([isActive])
+  @@map("api_keys")
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  resource  String
+  resourceId String?
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
