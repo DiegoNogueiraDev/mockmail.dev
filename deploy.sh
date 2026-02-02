@@ -726,6 +726,9 @@ enhanced_health_check() {
 
     sleep 5
 
+    # Atualizar PM2 em memória para evitar warnings que corrompem o JSON
+    pm2 update &>/dev/null || true
+
     local api_port="${API_PORTS[$ENVIRONMENT]}"
     local frontend_port="${FRONTEND_PORTS[$ENVIRONMENT]}"
     local ALL_OK=true
@@ -736,8 +739,26 @@ enhanced_health_check() {
     local env_suffix=""
     [ "$ENVIRONMENT" = "homologacao" ] && env_suffix="-hml"
     
-    local api_status=$(pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"mockmail-api${env_suffix}\") | .pm2_env.status" 2>/dev/null || echo "unknown")
-    local frontend_status=$(pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"mockmail-frontend${env_suffix}\") | .pm2_env.status" 2>/dev/null || echo "unknown")
+    # Função auxiliar para obter status do PM2 com fallback
+    get_pm2_status() {
+        local service_name="$1"
+        # Primeiro tenta via jlist (mais preciso)
+        local status=$(pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"$service_name\") | .pm2_env.status" 2>/dev/null)
+        # Se falhar ou vazio, tenta via pm2 list com grep
+        if [ -z "$status" ] || [ "$status" = "null" ]; then
+            if pm2 list --no-color 2>/dev/null | grep -q "$service_name.*online"; then
+                status="online"
+            elif pm2 list --no-color 2>/dev/null | grep -q "$service_name"; then
+                status="found_but_not_online"
+            else
+                status="unknown"
+            fi
+        fi
+        echo "$status"
+    }
+    
+    local api_status=$(get_pm2_status "mockmail-api${env_suffix}")
+    local frontend_status=$(get_pm2_status "mockmail-frontend${env_suffix}")
 
     if [ "$api_status" = "online" ]; then
         log_success "PM2 API: online"
@@ -792,7 +813,8 @@ enhanced_health_check() {
     fi
 
     # 6. Verificar Email Processor (agora via PM2)
-    local processor_status=$(pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"mockmail-processor${env_suffix}\") | .pm2_env.status" 2>/dev/null || echo "unknown")
+    # Nota: o processor não tem sufixo de ambiente, é único para todos
+    local processor_status=$(get_pm2_status "mockmail-processor")
     if [ "$processor_status" = "online" ]; then
         log_success "Email Processor (PM2): online"
     else
@@ -856,6 +878,9 @@ restart_services() {
         return 0
     fi
 
+    # Atualizar PM2 em memória para evitar warnings
+    pm2 update &>/dev/null || true
+
     local env_suffix=""
     local api_name="mockmail-api"
     local frontend_name="mockmail-frontend"
@@ -866,10 +891,18 @@ restart_services() {
         frontend_name="mockmail-frontend-hml"
     fi
 
-    # Função auxiliar para verificar status de um serviço
+    # Função auxiliar para verificar status de um serviço (com fallback)
     get_service_status() {
         local service_name="$1"
-        pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"$service_name\") | .pm2_env.status" 2>/dev/null || echo "not_found"
+        local status=$(pm2 jlist 2>/dev/null | jq -r ".[] | select(.name==\"$service_name\") | .pm2_env.status" 2>/dev/null)
+        if [ -z "$status" ] || [ "$status" = "null" ]; then
+            if pm2 list --no-color 2>/dev/null | grep -q "$service_name.*online"; then
+                status="online"
+            else
+                status="not_found"
+            fi
+        fi
+        echo "$status"
     }
 
     # ============================================
