@@ -724,7 +724,9 @@ enhanced_health_check() {
         return 0
     fi
 
-    sleep 5
+    # Aguardar serviços estabilizarem
+    log_info "Aguardando serviços estabilizarem (10s)..."
+    sleep 10
 
     # Atualizar PM2 em memória para evitar warnings que corrompem o JSON
     pm2 update &>/dev/null || true
@@ -774,22 +776,44 @@ enhanced_health_check() {
         ALL_OK=false
     fi
 
-    # 2. Verificar API HTTP
+    # 2. Verificar API HTTP (com retry para dar tempo de inicialização)
     log_info "Verificando endpoints..."
-    if curl -s -f "http://localhost:$api_port/api/health" > /dev/null 2>&1; then
-        log_success "API Health: OK (localhost:$api_port)"
-    elif curl -s -f "http://localhost:$api_port/api/csrf-token" > /dev/null 2>&1; then
-        log_success "API CSRF: OK (localhost:$api_port)"
-    else
-        log_error "API: Não responde (localhost:$api_port)"
+    local api_ok=false
+    for attempt in 1 2 3; do
+        if curl -s -f --max-time 5 "http://localhost:$api_port/api/health" > /dev/null 2>&1; then
+            log_success "API Health: OK (localhost:$api_port)"
+            api_ok=true
+            break
+        elif curl -s -f --max-time 5 "http://localhost:$api_port/api/csrf-token" > /dev/null 2>&1; then
+            log_success "API CSRF: OK (localhost:$api_port)"
+            api_ok=true
+            break
+        fi
+        if [ $attempt -lt 3 ]; then
+            log_info "API: tentativa $attempt/3 - aguardando..."
+            sleep 3
+        fi
+    done
+    if [ "$api_ok" = false ]; then
+        log_error "API: Não responde após 3 tentativas (localhost:$api_port)"
         ALL_OK=false
     fi
 
-    # 3. Verificar Frontend
-    if curl -s -f "http://localhost:$frontend_port" > /dev/null 2>&1; then
-        log_success "Frontend: OK (localhost:$frontend_port)"
-    else
-        log_warning "Frontend: Não responde (pode estar iniciando...)"
+    # 3. Verificar Frontend (com retry)
+    local frontend_ok=false
+    for attempt in 1 2 3; do
+        if curl -s -f --max-time 5 "http://localhost:$frontend_port" > /dev/null 2>&1; then
+            log_success "Frontend: OK (localhost:$frontend_port)"
+            frontend_ok=true
+            break
+        fi
+        if [ $attempt -lt 3 ]; then
+            log_info "Frontend: tentativa $attempt/3 - aguardando..."
+            sleep 3
+        fi
+    done
+    if [ "$frontend_ok" = false ]; then
+        log_warning "Frontend: Não responde após 3 tentativas (pode estar iniciando...)"
         ((WARNINGS++))
     fi
 
@@ -1089,11 +1113,7 @@ setup_ecosystem
 restart_services
 stop_python_processors
 
-# Aguardar estabilização
-log_info "Aguardando estabilização dos serviços..."
-sleep 5
-
-# Health check final
+# Health check final (já inclui tempo de espera internamente)
 if ! enhanced_health_check; then
     log_error "Health check falhou!"
     read -p "Deseja executar rollback automático? (s/N): " DO_ROLLBACK
