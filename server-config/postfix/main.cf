@@ -13,7 +13,7 @@ inet_interfaces = all
 inet_protocols = ipv4
 
 # Relay (pode deixar vazio ou configurar se usar outro servidor)
-relayhost = 
+relayhost =
 
 # Habilitar TLS para conexões seguras
 smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
@@ -21,8 +21,8 @@ smtpd_use_tls=yes
 
 smtpd_tls_security_level = may
 smtp_tls_security_level = may
-smtpd_tls_cert_file = /etc/ssl/certs/postfix.pem
-smtpd_tls_key_file = /etc/ssl/private/postfix.key
+smtpd_tls_cert_file = /etc/letsencrypt/live/mockmail.dev/fullchain.pem
+smtpd_tls_key_file = /etc/letsencrypt/live/mockmail.dev/privkey.pem
 smtpd_tls_protocols = !SSLv2, !SSLv3, TLSv1.2, TLSv1.3
 smtpd_tls_mandatory_protocols = !SSLv2, !SSLv3
 smtp_tls_protocols = !SSLv2, !SSLv3
@@ -49,9 +49,9 @@ local_recipient_maps =
 # Opcional: Limitar tamanho de mensagens (em bytes)
 message_size_limit = 10240000
 
-# Configurações do OpenDKIM
-smtpd_milters = inet:localhost:8891
-non_smtpd_milters = inet:localhost:8891
+# Configurações do OpenDKIM (desabilitado - serviço não está rodando)
+# smtpd_milters = inet:localhost:8891
+# non_smtpd_milters = inet:localhost:8891
 milter_default_action = accept
 milter_protocol = 2
 
@@ -65,6 +65,8 @@ luser_relay = email-processord
 # Cortex
 virtual_alias_domains = cortexflow.space
 virtual_alias_maps = hash:/etc/postfix/virtual
-smtpd_sasl_type = dovecot
-smtpd_sasl_path = private/auth
-smtpd_sasl_auth_enable = yes
+# SASL desabilitado no main.cf (causava crash do smtpd na porta 25)
+# SASL está configurado APENAS na porta 587 via master.cf
+# smtpd_sasl_type = dovecot
+# smtpd_sasl_path = private/auth
+# smtpd_sasl_auth_enable = yes
