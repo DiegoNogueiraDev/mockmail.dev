@@ -379,7 +379,7 @@ export default function AdminStatsPage() {
                     borderRadius: '8px',
                     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                   }}
-                  labelFormatter={formatDateLabel}
+                  labelFormatter={(label) => formatDateLabel(String(label))}
                 />
                 <Legend />
                 <Area
@@ -447,7 +447,7 @@ export default function AdminStatsPage() {
                     borderRadius: '8px',
                     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                   }}
-                  labelFormatter={formatDateLabel}
+                  labelFormatter={(label) => formatDateLabel(String(label))}
                 />
                 <Legend />
                 <Bar dataKey="emails" name="Emails" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
