@@ -107,7 +107,7 @@ function LoginForm() {
               </p>
               <div className="space-y-4">
                 {[
-                  { icon: Zap, text: '500 emails/dia gratuitos' },
+                  { icon: Zap, text: '500 emails/dia' },
                   { icon: Shield, text: 'Seus dados estão seguros' },
                   { icon: Code, text: 'API completa disponível' },
                 ].map((item, index) => {
@@ -150,7 +150,7 @@ function LoginForm() {
                   className="font-semibold hover:underline"
                   style={{ color: 'var(--mockmail-purple)' }}
                 >
-                  Criar conta grátis
+                  Criar conta
                 </Link>
               </p>
             </div>

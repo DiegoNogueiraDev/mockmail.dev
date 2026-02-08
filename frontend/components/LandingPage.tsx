@@ -52,7 +52,7 @@ const features = [
 const benefits = [
   'Sem cartão de crédito',
   'Setup em 2 minutos',
-  '500 emails/dia grátis',
+  '500 emails/dia',
   'API documentada',
   'Suporte via GitHub',
 ];
@@ -122,7 +122,7 @@ export default function LandingPage() {
                 href="/register"
                 className="btn-brand btn-sm flex items-center gap-2"
               >
-                <span>Começar Grátis</span>
+                <span>Começar Agora</span>
                 <ArrowRight className="w-4 h-4" aria-hidden="true" />
               </Link>
             </div>
@@ -164,7 +164,7 @@ export default function LandingPage() {
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-100 mb-8">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" aria-hidden="true" />
                 <span className="text-sm font-medium text-gray-700">
-                  500 emails/dia grátis para todos
+                  500 emails/dia para todos
                 </span>
               </div>
 
@@ -181,7 +181,7 @@ export default function LandingPage() {
               {/* Subheading */}
               <p className="text-lg sm:text-xl text-gray-600 max-w-2xl mx-auto mb-10">
                 Crie caixas de email descartáveis para testes de integração,
-                validação de cadastros e automações. Simples, rápido e gratuito.
+                validação de cadastros e automações. Simples e rápido.
               </p>
 
               {/* CTA Buttons */}
@@ -190,7 +190,7 @@ export default function LandingPage() {
                   href="/register"
                   className="btn-brand w-full sm:w-auto text-lg px-8 py-4 flex items-center justify-center gap-2"
                 >
-                  <span>Criar Conta Grátis</span>
+                  <span>Criar Conta</span>
                   <ArrowRight className="w-5 h-5" aria-hidden="true" />
                 </Link>
                 <Link
@@ -417,7 +417,7 @@ console.log('📬 Email criado:', email);
                   href="/register"
                   className="inline-flex items-center gap-2 px-8 py-4 bg-white text-purple-700 font-semibold rounded-2xl transition-all duration-300 hover:shadow-xl hover:scale-105"
                 >
-                  <span>Criar Conta Grátis</span>
+                  <span>Criar Conta</span>
                   <ChevronRight className="w-5 h-5" aria-hidden="true" />
                 </Link>
               </div>
