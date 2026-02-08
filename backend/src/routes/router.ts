@@ -9,6 +9,7 @@ import apiKeyRoutes from "./apiKey.routes";
 import profileRoutes from "./profile.routes";
 import { csrfTokenHandler, csrfProtection } from "../middlewares/csrfMiddleware";
 import dashboardRoutes from "./dashboard.routes";
+import adminRoutes from "./admin.routes";
 import { dailyUserLimitMiddleware } from "../middlewares/dailyUserLimit";
 import internalRoutes from "./internal.routes";
 
@@ -114,6 +115,18 @@ try {
 } catch (error) {
   logger.error(
     `ROUTE-ROUTER - Erro ao carregar rotas de dashboard: ${(error as Error).message}`
+  );
+}
+
+try {
+  // Agrupando rotas de administração
+  router.use("/admin", adminRoutes);
+  logger.info(
+    "ROUTE-ROUTER - Rotas de administração (/admin) carregadas com sucesso."
+  );
+} catch (error) {
+  logger.error(
+    `ROUTE-ROUTER - Erro ao carregar rotas de admin: ${(error as Error).message}`
   );
 }
 

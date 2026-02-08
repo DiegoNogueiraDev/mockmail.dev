@@ -20,10 +20,10 @@ export const findOrCreateEmailBox = async (address: string, userId: string, isCu
       logger.info(
         `SERVICE-EMAILBOX - Criando nova caixa de e-mail para o usuário ${userId} com endereço: ${address}`
       );
-      
+
       // Calcula expiração: 24 horas a partir de agora
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      
+
       emailBox = new EmailBox({
         address,
         userId,
@@ -31,14 +31,29 @@ export const findOrCreateEmailBox = async (address: string, userId: string, isCu
         expiresAt,
       });
       await emailBox.save();
-      
+
       logger.info(
         `SERVICE-EMAILBOX - Caixa criada com expiração em: ${expiresAt.toISOString()}`
       );
     } else {
-      logger.info(
-        `SERVICE-EMAILBOX - Caixa de e-mail já existe: ${address}`
-      );
+      // Caixa já existe - verificar se precisa renovar a expiração
+      const now = new Date();
+      const isExpired = emailBox.expiresAt && new Date(emailBox.expiresAt) <= now;
+
+      if (isExpired || !emailBox.expiresAt) {
+        // Renovar expiração para mais 24 horas quando recebe novo email
+        const newExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        emailBox.expiresAt = newExpiresAt;
+        await emailBox.save();
+
+        logger.info(
+          `SERVICE-EMAILBOX - Caixa reativada: ${address} - Nova expiração: ${newExpiresAt.toISOString()}`
+        );
+      } else {
+        logger.info(
+          `SERVICE-EMAILBOX - Caixa de e-mail já existe e está ativa: ${address}`
+        );
+      }
     }
 
     return emailBox;
@@ -52,7 +67,7 @@ export const findOrCreateEmailBox = async (address: string, userId: string, isCu
       "SERVICE-EMAILBOX - Erro interno ao processar caixa de e-mail"
     );
   }
-};
+};;
 
 
 /**
@@ -132,7 +147,7 @@ export const getLatestEmailBySubjectService = async (
 /**
  * Gera um endereço de email randômico único.
  * Formato: prefixo_randomico@mockmail.dev
- * 
+ *
  * @returns Endereço único gerado
  */
 export const generateRandomAddress = async (): Promise<string> => {
@@ -152,15 +167,15 @@ export const generateRandomAddress = async (): Promise<string> => {
   while (attempts < maxAttempts) {
     const randomId = generateId();
     const address = `${randomId}@mockmail.dev`;
-    
+
     // Verifica se já existe
     const existing = await EmailBox.findOne({ address });
-    
+
     if (!existing) {
       logger.info(`SERVICE-EMAILBOX - Endereço randômico gerado: ${address}`);
       return address;
     }
-    
+
     attempts++;
     logger.debug(`SERVICE-EMAILBOX - Endereço ${address} já existe, tentativa ${attempts}`);
   }
@@ -175,7 +190,7 @@ export const generateRandomAddress = async (): Promise<string> => {
 /**
  * Gera um endereço personalizado com sufixo único.
  * Formato: nome_escolhido_sufixo@mockmail.dev
- * 
+ *
  * @param customName - Nome escolhido pelo usuário
  * @returns Endereço único com o nome personalizado
  */
@@ -206,15 +221,15 @@ export const generateCustomAddress = async (customName: string): Promise<string>
   while (attempts < maxAttempts) {
     const suffix = generateSuffix();
     const address = `${sanitizedName}_${suffix}@mockmail.dev`;
-    
+
     // Verifica se já existe
     const existing = await EmailBox.findOne({ address });
-    
+
     if (!existing) {
       logger.info(`SERVICE-EMAILBOX - Endereço personalizado gerado: ${address}`);
       return address;
     }
-    
+
     attempts++;
     logger.debug(`SERVICE-EMAILBOX - Endereço ${address} já existe, tentativa ${attempts}`);
   }
@@ -228,7 +243,7 @@ export const generateCustomAddress = async (customName: string): Promise<string>
 
 /**
  * Cria uma nova caixa de email para o usuário.
- * 
+ *
  * @param userId - ID do usuário
  * @param customName - Nome personalizado (opcional, se null gera randômico)
  * @returns A caixa de email criada
@@ -272,7 +287,7 @@ export const createEmailBoxForUser = async (
 
 /**
  * Lista todas as caixas de email de um usuário (não expiradas).
- * 
+ *
  * @param userId - ID do usuário
  * @returns Lista de caixas com tempo restante
  */
@@ -289,7 +304,7 @@ export const listUserEmailBoxes = async (userId: string) => {
       const expiresAt = new Date(box.expiresAt);
       const timeLeftMs = Math.max(0, expiresAt.getTime() - now.getTime());
       const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
-      
+
       return {
         id: box._id,
         address: box.address,
@@ -315,11 +330,11 @@ export const listUserEmailBoxes = async (userId: string) => {
  */
 function formatTimeLeft(seconds: number): string {
   if (seconds <= 0) return "Expirada";
-  
+
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
-  
+
   if (hours > 0) {
     return `${hours}h ${minutes}m`;
   } else if (minutes > 0) {
@@ -331,7 +346,7 @@ function formatTimeLeft(seconds: number): string {
 
 /**
  * Deleta uma caixa de email e todos os seus emails.
- * 
+ *
  * @param boxId - ID da caixa
  * @param userId - ID do usuário (para validação de propriedade)
  */
@@ -339,7 +354,7 @@ export const deleteEmailBox = async (boxId: string, userId: string) => {
   try {
     // Verifica se a caixa pertence ao usuário
     const box = await EmailBox.findOne({ _id: boxId, userId });
-    
+
     if (!box) {
       throw new Error("Caixa não encontrada ou não pertence ao usuário");
     }

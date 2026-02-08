@@ -17,6 +17,8 @@ import {
   Search,
   Eraser,
   Sparkles,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react';
 import { ExpirationTimer, CircularExpirationTimer } from '@/components/ExpirationTimer';
 import toast from 'react-hot-toast';
@@ -28,6 +30,7 @@ interface EmailBox {
   isCustom?: boolean;
   createdAt: string;
   expiresAt?: string;
+  expired?: boolean;
   timeLeftSeconds?: number;
   timeLeftFormatted?: string;
   updatedAt: string;
@@ -40,6 +43,11 @@ interface BoxesData {
     limit: number;
     total: number;
     totalPages: number;
+  };
+  summary?: {
+    activeCount: number;
+    expiredCount: number;
+    firstExpiredIndex: number;
   };
 }
 
@@ -55,7 +63,7 @@ export default function BoxesPage() {
   const [clearingId, setClearingId] = useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const pageRef = useRef(1);
-  
+
   // Modal state
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -99,7 +107,7 @@ export default function BoxesPage() {
   // Fetch para carregar mais itens (infinite scroll)
   const loadMoreBoxes = useCallback(async () => {
     const nextPage = pageRef.current + 1;
-    
+
     try {
       const response = await api.get<BoxesData>(`/api/boxes?page=${nextPage}&limit=20`);
       if (response.success) {
@@ -301,7 +309,8 @@ export default function BoxesPage() {
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {filteredBoxes.map((box) => (
+            {/* Caixas Ativas */}
+            {filteredBoxes.filter(box => !box.expired).map((box) => (
               <div
                 key={box.id}
                 className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors"
@@ -398,17 +407,109 @@ export default function BoxesPage() {
                 </div>
               </div>
             ))}
+
+            {/* Divisor - Caixas Expiradas */}
+            {filteredBoxes.some(box => box.expired) && (
+              <div className="relative py-4" data-testid="expired-divider">
+                <div className="absolute inset-0 flex items-center px-4">
+                  <div className="w-full border-t-2 border-orange-200"></div>
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-white px-4 py-1 text-sm font-medium text-orange-600 flex items-center gap-2 rounded-full border border-orange-200">
+                    <Clock className="w-4 h-4" />
+                    Caixas Expiradas ({filteredBoxes.filter(box => box.expired).length})
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Caixas Expiradas */}
+            {filteredBoxes.filter(box => box.expired).map((box) => (
+              <div
+                key={box.id}
+                className="flex items-center gap-4 p-4 hover:bg-orange-50/50 transition-colors opacity-75 bg-orange-50/30"
+                data-testid={`box-item-${box.id}`}
+              >
+                {/* Ícone de Expirado */}
+                <div className="flex-shrink-0">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-400 to-orange-500 flex items-center justify-center">
+                    <AlertTriangle className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Link
+                      href={`/admin/boxes/${box.id}`}
+                      className="text-sm font-medium text-gray-600 hover:text-orange-600 truncate"
+                      data-testid={`box-address-${box.id}`}
+                    >
+                      {box.address}
+                    </Link>
+                    <button
+                      onClick={() => handleCopyAddress(box.address, box.id)}
+                      className="p-1 rounded hover:bg-gray-200 transition-colors"
+                      title="Copiar endereço"
+                      data-testid={`copy-address-${box.id}`}
+                    >
+                      {copiedId === box.id ? (
+                        <Check className="w-4 h-4 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-gray-400" />
+                      )}
+                    </button>
+                    {box.isCustom && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                        <Sparkles className="w-3 h-3" />
+                        Personalizada
+                      </span>
+                    )}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                      <Clock className="w-3 h-3" />
+                      Expirada
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    <span className="flex items-center gap-1 text-sm text-gray-500">
+                      <Mail className="w-4 h-4" />
+                      {box.emailCount} {box.emailCount === 1 ? 'email' : 'emails'}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      Criada em{' '}
+                      {new Date(box.createdAt).toLocaleDateString('pt-BR', {
+                        dateStyle: 'short',
+                      })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleDelete(box.id, box.address)}
+                    disabled={deletingId === box.id}
+                    className="btn-secondary btn-sm flex items-center gap-1 text-red-600 hover:bg-red-50 hover:border-red-200 disabled:opacity-50"
+                    title="Excluir caixa"
+                    data-testid={`delete-box-${box.id}`}
+                  >
+                    <Trash2 className={`w-4 h-4 ${deletingId === box.id ? 'animate-pulse' : ''}`} />
+                    <span className="hidden sm:inline">Excluir</span>
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
       {/* Infinite Scroll Sentinel */}
-      <div 
-        ref={sentinelRef} 
-        className="h-4" 
+      <div
+        ref={sentinelRef}
+        className="h-4"
         data-testid="boxes-sentinel"
       />
-      
+
       {/* Loading More Indicator */}
       {isLoadingMore && (
         <div className="flex items-center justify-center py-4 gap-2 text-gray-500">
@@ -416,7 +517,7 @@ export default function BoxesPage() {
           <span className="text-sm">Carregando mais caixas...</span>
         </div>
       )}
-      
+
       {/* End of List Indicator */}
       {!loading && !isLoadingMore && page >= totalPages && boxes.length > 0 && (
         <p className="text-center text-sm text-gray-400 py-4">

@@ -15,17 +15,18 @@ import {
   generateCustomAddress,
   createEmailBoxForUser,
 } from "../services/emailBox.service";
+import { archiveBoxOnDeletion } from "../services/emailHistory.service";
 
 /**
  * Formata o tempo restante em formato legível.
  */
 function formatTimeLeft(seconds: number): string {
   if (seconds <= 0) return "Expirada";
-  
+
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
-  
+
   if (hours > 0) {
     return `${hours}h ${minutes}m`;
   } else if (minutes > 0) {
@@ -62,33 +63,39 @@ export const listBoxes = async (req: Request, res: Response) => {
       // Recalcular timeLeft para dados cacheados (tempo é dinâmico)
       const now = new Date();
       cached.data = cached.data.map((box: any) => {
+        if (!box.expiresAt) {
+          // Caixas legado sem expiração
+          return {
+            ...box,
+            expired: false,
+            timeLeftSeconds: null,
+            timeLeftFormatted: null,
+          };
+        }
         const expiresAt = new Date(box.expiresAt);
-        const timeLeftMs = Math.max(0, expiresAt.getTime() - now.getTime());
-        const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
+        const timeLeftMs = expiresAt.getTime() - now.getTime();
+        const expired = timeLeftMs <= 0;
+        const timeLeftSeconds = expired ? 0 : Math.floor(timeLeftMs / 1000);
         return {
           ...box,
+          expired,
           timeLeftSeconds,
-          timeLeftFormatted: formatTimeLeft(timeLeftSeconds),
+          timeLeftFormatted: expired ? "Expirada" : formatTimeLeft(timeLeftSeconds),
         };
       });
       logger.info(`CONTROL-EMAILBOX - Cache HIT for user ${userId} boxes (page ${page})`);
       return res.status(200).json({ success: true, ...cached });
     }
 
-    // Buscar apenas caixas não expiradas
+    // Buscar TODAS as caixas do usuário (sem filtrar por expiração)
+    // O frontend irá mostrar status de "expirada" quando necessário
     const [boxes, total] = await Promise.all([
-      EmailBox.find({ 
-        userId,
-        expiresAt: { $gt: new Date() }, // Apenas não expiradas
-      })
+      EmailBox.find({ userId })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      EmailBox.countDocuments({ 
-        userId,
-        expiresAt: { $gt: new Date() },
-      }),
+      EmailBox.countDocuments({ userId }),
     ]);
 
     const now = new Date();
@@ -97,30 +104,61 @@ export const listBoxes = async (req: Request, res: Response) => {
     const boxesWithDetails = await Promise.all(
       boxes.map(async (box: any) => {
         const emailCount = await Email.countDocuments({ to: box.address });
-        const expiresAt = new Date(box.expiresAt);
-        const timeLeftMs = Math.max(0, expiresAt.getTime() - now.getTime());
-        const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
-        
+
+        // Calcular tempo restante e status de expiração
+        let timeLeftSeconds = null;
+        let timeLeftFormatted = null;
+        let expired = false;
+
+        if (box.expiresAt) {
+          const expiresAt = new Date(box.expiresAt);
+          const timeLeftMs = expiresAt.getTime() - now.getTime();
+          expired = timeLeftMs <= 0;
+          timeLeftSeconds = expired ? 0 : Math.floor(timeLeftMs / 1000);
+          timeLeftFormatted = expired ? "Expirada" : formatTimeLeft(timeLeftSeconds);
+        }
+
         return {
           id: box._id,
           address: box.address,
           isCustom: box.isCustom || false,
           emailCount,
           createdAt: box.createdAt,
-          expiresAt: box.expiresAt,
+          expiresAt: box.expiresAt || null,
+          expired,
           timeLeftSeconds,
-          timeLeftFormatted: formatTimeLeft(timeLeftSeconds),
+          timeLeftFormatted,
         };
       })
     );
 
+    // Ordenar: caixas ativas primeiro (não expiradas), depois expiradas
+    // Dentro de cada grupo, ordenar por data de criação (mais recentes primeiro)
+    const sortedBoxes = boxesWithDetails.sort((a, b) => {
+      // Primeiro critério: ativas antes de expiradas
+      if (a.expired !== b.expired) {
+        return a.expired ? 1 : -1; // Ativas (false) vêm antes de expiradas (true)
+      }
+      // Segundo critério: mais recentes primeiro (dentro do mesmo grupo)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    // Contar caixas ativas e expiradas para o frontend saber onde fazer a divisão
+    const activeCount = sortedBoxes.filter(b => !b.expired).length;
+    const expiredCount = sortedBoxes.filter(b => b.expired).length;
+
     const responseData = {
-      data: boxesWithDetails,
+      data: sortedBoxes,
       pagination: {
         page,
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+      },
+      summary: {
+        activeCount,
+        expiredCount,
+        firstExpiredIndex: activeCount, // Índice onde começam as expiradas
       },
     };
 
@@ -136,7 +174,7 @@ export const listBoxes = async (req: Request, res: Response) => {
     logger.error(`CONTROL-EMAILBOX - Error listing boxes: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
-};
+};;;
 
 /**
  * Get a single email box by ID
@@ -212,39 +250,63 @@ export const createBox = async (req: Request, res: Response) => {
       }
     } catch (genError) {
       logger.error(`CONTROL-EMAILBOX - Error generating address: ${(genError as Error).message}`);
-      return res.status(400).json({ 
-        success: false, 
-        message: (genError as Error).message || "Erro ao gerar endereço" 
+      return res.status(400).json({
+        success: false,
+        message: (genError as Error).message || "Erro ao gerar endereço"
       });
     }
 
-    // Calcular expiração: 24 horas
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    // Verificar se já existe uma caixa com esse endereço
+    let box = await EmailBox.findOne({ address });
+    const now = new Date();
 
-    const box = new EmailBox({
-      address,
-      userId,
-      isCustom,
-      expiresAt,
-    });
+    if (box) {
+      // Caixa existe - verificar se pertence ao usuário
+      if (box.userId.toString() !== userId.toString()) {
+        return res.status(409).json({
+          success: false,
+          message: "Endereço já está em uso por outro usuário."
+        });
+      }
 
-    await box.save();
+      // Pertence ao usuário - reativar com nova expiração
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      box.expiresAt = expiresAt;
+      box.isCustom = isCustom;
+      await box.save();
+
+      logger.info(`CONTROL-EMAILBOX - Reactivated box ${address} for user ${userId} (new expiry: ${expiresAt.toISOString()})`);
+    } else {
+      // Criar nova caixa
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      box = new EmailBox({
+        address,
+        userId,
+        isCustom,
+        expiresAt,
+      });
+
+      await box.save();
+      logger.info(`CONTROL-EMAILBOX - Created box ${address} for user ${userId} (expires: ${expiresAt.toISOString()})`);
+    }
 
     // Invalidate user's boxes cache
     await invalidateUserBoxesCache(userId.toString());
 
-    const now = new Date();
+    const expiresAt = new Date(box.expiresAt);
     const timeLeftMs = expiresAt.getTime() - now.getTime();
     const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
 
-    logger.info(`CONTROL-EMAILBOX - Created box ${address} for user ${userId} (expires: ${expiresAt.toISOString()})`);
+    const emailCount = await Email.countDocuments({ to: box.address });
+
     res.status(201).json({
       success: true,
       data: {
         id: box._id,
         address: box.address,
         isCustom: box.isCustom,
-        emailCount: 0,
+        emailCount,
         createdAt: box.createdAt,
         expiresAt: box.expiresAt,
         timeLeftSeconds,
@@ -253,21 +315,22 @@ export const createBox = async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error(`CONTROL-EMAILBOX - Error creating box: ${(error as Error).message}`);
-    
+
     // Check for duplicate key error
     if ((error as any).code === 11000) {
-      return res.status(409).json({ 
-        success: false, 
-        message: "Endereço já existe. Tente novamente." 
+      return res.status(409).json({
+        success: false,
+        message: "Endereço já existe. Tente novamente."
       });
     }
-    
+
     res.status(500).json({ success: false, message: "Internal server error" });
   }
-};
+};;
 
 /**
  * Delete an email box and all its emails
+ * Arquiva os emails no histórico antes de deletar
  */
 export const deleteBox = async (req: Request, res: Response) => {
   try {
@@ -285,9 +348,22 @@ export const deleteBox = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "Email box not found" });
     }
 
+    // Arquivar a caixa e seus emails no histórico antes de deletar
+    const emailCount = await Email.countDocuments({ to: box.address });
+    let archivedHistory = null;
+
+    if (emailCount > 0) {
+      archivedHistory = await archiveBoxOnDeletion(id, {
+        userId: userId.toString(),
+        userEmail: user.email || 'unknown',
+        userName: user.name || 'Unknown User',
+        userRole: user.role || 'user',
+      });
+    }
+
     // Delete all emails for this box
     const deletedEmails = await Email.deleteMany({ to: box.address });
-    
+
     // Delete the box
     await EmailBox.deleteOne({ _id: id });
 
@@ -297,11 +373,17 @@ export const deleteBox = async (req: Request, res: Response) => {
       invalidateUserEmailsCache(userId.toString()),
     ]);
 
-    logger.info(`CONTROL-EMAILBOX - Deleted box ${box.address} and ${deletedEmails.deletedCount} emails for user ${userId}`);
+    logger.info(
+      `CONTROL-EMAILBOX - Deleted box ${box.address} and ${deletedEmails.deletedCount} emails for user ${userId}. ` +
+      `${archivedHistory ? `Archived to history: ${archivedHistory._id}` : 'No emails to archive'}`
+    );
+
     res.status(200).json({
       success: true,
       message: "Email box deleted successfully",
       deletedEmails: deletedEmails.deletedCount,
+      archived: archivedHistory ? true : false,
+      historyId: archivedHistory?._id || null,
     });
   } catch (error) {
     logger.error(`CONTROL-EMAILBOX - Error deleting box: ${(error as Error).message}`);

@@ -8,7 +8,7 @@ import logger from '../utils/logger';
  */
 const createStore = (prefix: string) => {
   const redisClient = getRedisClient();
-  
+
   if (!redisClient) {
     logger.warn(`RATE-LIMIT - Redis não disponível para ${prefix}, usando memória (pode causar memory leak!)`);
     return undefined; // express-rate-limit usará MemoryStore por padrão
@@ -35,8 +35,8 @@ export const authLimiter = rateLimit({
   keyGenerator: (req) => {
     // Prioriza X-Forwarded-For (HAProxy) sobre req.ip
     const forwarded = req.headers['x-forwarded-for'];
-    const ip = typeof forwarded === 'string' 
-      ? forwarded.split(',')[0].trim() 
+    const ip = typeof forwarded === 'string'
+      ? forwarded.split(',')[0].trim()
       : req.ip || 'unknown';
     return ip;
   },
@@ -66,8 +66,8 @@ export const emailBoxCreationLimiter = rateLimit({
   store: createStore('emailbox'),
   keyGenerator: (req) => {
     const forwarded = req.headers['x-forwarded-for'];
-    const ip = typeof forwarded === 'string' 
-      ? forwarded.split(',')[0].trim() 
+    const ip = typeof forwarded === 'string'
+      ? forwarded.split(',')[0].trim()
       : req.ip || 'unknown';
     return ip;
   },
@@ -83,18 +83,19 @@ export const emailBoxCreationLimiter = rateLimit({
 
 /**
  * Rate limiter geral para API
- * Limite: 100 requisições por 15 minutos por IP
+ * Limite: 500 requisições por 15 minutos por IP
+ * (Aumentado de 100 para 500 - permite navegação normal sem bloqueios)
  */
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
   store: createStore('general'),
   keyGenerator: (req) => {
     const forwarded = req.headers['x-forwarded-for'];
-    const ip = typeof forwarded === 'string' 
-      ? forwarded.split(',')[0].trim() 
+    const ip = typeof forwarded === 'string'
+      ? forwarded.split(',')[0].trim()
       : req.ip || 'unknown';
     return ip;
   },
@@ -123,8 +124,8 @@ export const strictLimiter = rateLimit({
   store: createStore('strict'),
   keyGenerator: (req) => {
     const forwarded = req.headers['x-forwarded-for'];
-    const ip = typeof forwarded === 'string' 
-      ? forwarded.split(',')[0].trim() 
+    const ip = typeof forwarded === 'string'
+      ? forwarded.split(',')[0].trim()
       : req.ip || 'unknown';
     return ip;
   },

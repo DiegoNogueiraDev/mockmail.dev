@@ -62,3 +62,4 @@ cd frontend && npm run dev
 - Nunca abrir processos em novas portas (use 3000 e 3001)
 - Não regrida funcionalidades
 - Evite alterações desnecessárias no código
+- não é mais facil fazer um commit git push e fazer o pull no server o repositório esta atrelado em produção
