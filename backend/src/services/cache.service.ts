@@ -28,6 +28,7 @@ const CACHE_CONFIG = {
     WEBHOOKS: 'cache:webhooks:',
     API_KEYS: 'cache:apikeys:',
     ADMIN: 'cache:admin:',
+    DASHBOARD: 'cache:dashboard:',
   },
 };
 
@@ -176,6 +177,20 @@ export const getUserEmailsCacheKey = (userId: string, page: number, limit: numbe
 };
 
 /**
+ * Get cache key for a specific box's emails
+ */
+export const getBoxEmailsCacheKey = (boxId: string, page: number, limit: number): string => {
+  return `${CACHE_CONFIG.PREFIX.EMAILS}box:${boxId}:${page}:${limit}`;
+};
+
+/**
+ * Invalidate cache for a specific box's emails
+ */
+export const invalidateBoxEmailsCache = async (boxId: string): Promise<void> => {
+  await invalidatePattern(`${CACHE_CONFIG.PREFIX.EMAILS}box:${boxId}:*`);
+};
+
+/**
  * Get cache key for dashboard stats
  */
 export const getStatsCacheKey = (userId: string): string => {
@@ -201,8 +216,9 @@ export const getUserApiKeysCacheKey = (userId: string, page: number, limit: numb
  */
 export const invalidateUserBoxesCache = async (userId: string): Promise<void> => {
   await invalidatePattern(`${CACHE_CONFIG.PREFIX.BOXES}${userId}:*`);
-  // Also invalidate stats since boxes affect them
+  // Also invalidate stats and dashboard since boxes affect them
   await invalidatePattern(`${CACHE_CONFIG.PREFIX.STATS}${userId}:*`);
+  await invalidatePattern(`${CACHE_CONFIG.PREFIX.DASHBOARD}${userId}:*`);
 };
 
 /**
@@ -210,8 +226,9 @@ export const invalidateUserBoxesCache = async (userId: string): Promise<void> =>
  */
 export const invalidateUserEmailsCache = async (userId: string): Promise<void> => {
   await invalidatePattern(`${CACHE_CONFIG.PREFIX.EMAILS}${userId}:*`);
-  // Also invalidate stats since emails affect them
+  // Also invalidate stats and dashboard since emails affect them
   await invalidatePattern(`${CACHE_CONFIG.PREFIX.STATS}${userId}:*`);
+  await invalidatePattern(`${CACHE_CONFIG.PREFIX.DASHBOARD}${userId}:*`);
 };
 
 /**
@@ -322,6 +339,38 @@ export const invalidateAdminUsersCache = async (): Promise<void> => {
  */
 export const invalidateAdminBoxesCache = async (): Promise<void> => {
   await invalidatePattern(`${CACHE_CONFIG.PREFIX.ADMIN}boxes:*`);
+};
+
+// =====================================================
+// Dashboard-specific cache helpers
+// =====================================================
+
+/**
+ * Get cache key for user dashboard stats
+ */
+export const getDashboardStatsCacheKey = (userId: string): string => {
+  return `${CACHE_CONFIG.PREFIX.DASHBOARD}${userId}:stats`;
+};
+
+/**
+ * Get cache key for user recent emails
+ */
+export const getDashboardRecentEmailsCacheKey = (userId: string, limit: number): string => {
+  return `${CACHE_CONFIG.PREFIX.DASHBOARD}${userId}:recent:${limit}`;
+};
+
+/**
+ * Get cache key for user usage stats
+ */
+export const getDashboardUsageCacheKey = (userId: string): string => {
+  return `${CACHE_CONFIG.PREFIX.DASHBOARD}${userId}:usage`;
+};
+
+/**
+ * Invalidate all dashboard cache for a user
+ */
+export const invalidateDashboardCache = async (userId: string): Promise<void> => {
+  await invalidatePattern(`${CACHE_CONFIG.PREFIX.DASHBOARD}${userId}:*`);
 };
 
 // Export configuration for use in other modules

@@ -5,6 +5,14 @@ import Email from "../models/Email";
 import Webhook from "../models/Webhook";
 import logger from "../utils/logger";
 import { getUserDailyUsage, DAILY_LIMIT } from "../middlewares/dailyUserLimit";
+import {
+  getFromCache,
+  setInCache,
+  getDashboardStatsCacheKey,
+  getDashboardRecentEmailsCacheKey,
+  getDashboardUsageCacheKey,
+  CACHE_TTL,
+} from "../services/cache.service";
 
 const router = Router();
 
@@ -19,9 +27,17 @@ router.use(authMiddleware);
 router.get("/stats", async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const userId = user?._id || user?.id;
+    const userId = user?._id?.toString() || user?.id;
 
     logger.info(`ROUTE-DASHBOARD - GET /dashboard/stats - User: ${user?.email}`);
+
+    // Check cache first
+    const cacheKey = getDashboardStatsCacheKey(userId);
+    const cached = await getFromCache<any>(cacheKey);
+    if (cached) {
+      logger.debug(`ROUTE-DASHBOARD - Cache HIT for stats user:${userId}`);
+      return res.json({ success: true, data: cached });
+    }
 
     // First, get all user's email boxes
     const userBoxes = await EmailBox.find({ userId }).select('_id').lean();
@@ -60,26 +76,28 @@ router.get("/stats", async (req: Request, res: Response) => {
       }),
     ]);
 
-    const boxesChange = boxesYesterday > 0 
-      ? Math.round(((totalBoxes - boxesYesterday) / boxesYesterday) * 100) 
+    const boxesChange = boxesYesterday > 0
+      ? Math.round(((totalBoxes - boxesYesterday) / boxesYesterday) * 100)
       : 0;
-    const emailsChange = emailsYesterday > 0 
-      ? Math.round(((emailsToday - emailsYesterday) / emailsYesterday) * 100) 
+    const emailsChange = emailsYesterday > 0
+      ? Math.round(((emailsToday - emailsYesterday) / emailsYesterday) * 100)
       : 0;
 
-    res.json({
-      success: true,
-      data: {
-        totalBoxes,
-        totalEmails,
-        emailsToday,
-        activeWebhooks,
-        percentChange: {
-          boxes: boxesChange,
-          emails: emailsChange,
-        },
+    const responseData = {
+      totalBoxes,
+      totalEmails,
+      emailsToday,
+      activeWebhooks,
+      percentChange: {
+        boxes: boxesChange,
+        emails: emailsChange,
       },
-    });
+    };
+
+    // Cache the response (SHORT TTL - 1 min)
+    await setInCache(cacheKey, responseData, CACHE_TTL.SHORT);
+
+    res.json({ success: true, data: responseData });
   } catch (error) {
     logger.error(`ROUTE-DASHBOARD - GET /dashboard/stats - Error: ${(error as Error).message}`);
     res.status(500).json({ error: "Failed to fetch dashboard stats" });
@@ -94,10 +112,18 @@ router.get("/stats", async (req: Request, res: Response) => {
 router.get("/recent-emails", async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const userId = user?._id || user?.id;
+    const userId = user?._id?.toString() || user?.id;
     const limit = parseInt(req.query.limit as string) || 5;
 
     logger.info(`ROUTE-DASHBOARD - GET /dashboard/recent-emails - User: ${user?.email}`);
+
+    // Check cache first
+    const cacheKey = getDashboardRecentEmailsCacheKey(userId, limit);
+    const cached = await getFromCache<any[]>(cacheKey);
+    if (cached) {
+      logger.debug(`ROUTE-DASHBOARD - Cache HIT for recent-emails user:${userId}`);
+      return res.json({ success: true, data: cached });
+    }
 
     // First, get all user's email boxes
     const userBoxes = await EmailBox.find({ userId }).select('_id address').lean();
@@ -117,6 +143,9 @@ router.get("/recent-emails", async (req: Request, res: Response) => {
       receivedAt: email.createdAt?.toISOString() || new Date().toISOString(),
       boxAddress: email.emailBox?.address || email.to || 'Unknown box',
     }));
+
+    // Cache the response (SHORT TTL - 1 min)
+    await setInCache(cacheKey, formattedEmails, CACHE_TTL.SHORT);
 
     res.json({ success: true, data: formattedEmails });
   } catch (error) {
@@ -142,15 +171,25 @@ router.get("/usage", async (req: Request, res: Response) => {
       return;
     }
 
+    // Check cache first
+    const cacheKey = getDashboardUsageCacheKey(userId);
+    const cached = await getFromCache<any>(cacheKey);
+    if (cached) {
+      logger.debug(`ROUTE-DASHBOARD - Cache HIT for usage user:${userId}`);
+      return res.json({ success: true, data: cached });
+    }
+
     const usage = await getUserDailyUsage(userId);
 
-    res.json({
-      success: true,
-      data: {
-        ...usage,
-        percentage: Math.round((usage.used / usage.limit) * 100),
-      },
-    });
+    const responseData = {
+      ...usage,
+      percentage: Math.round((usage.used / usage.limit) * 100),
+    };
+
+    // Cache the response (SHORT TTL - 1 min)
+    await setInCache(cacheKey, responseData, CACHE_TTL.SHORT);
+
+    res.json({ success: true, data: responseData });
   } catch (error) {
     logger.error(`ROUTE-DASHBOARD - GET /dashboard/usage - Error: ${(error as Error).message}`);
     res.status(500).json({ error: "Failed to fetch usage stats" });

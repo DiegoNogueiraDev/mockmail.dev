@@ -6,8 +6,10 @@ import {
   getFromCache,
   setInCache,
   getUserBoxesCacheKey,
+  getBoxEmailsCacheKey,
   invalidateUserBoxesCache,
   invalidateUserEmailsCache,
+  invalidateBoxEmailsCache,
   CACHE_TTL,
 } from "../services/cache.service";
 import {
@@ -384,10 +386,11 @@ export const deleteBox = async (req: Request, res: Response) => {
     // Delete the box
     await EmailBox.deleteOne({ _id: id });
 
-    // Invalidate user's boxes and emails cache
+    // Invalidate user's boxes, emails, and specific box email cache
     await Promise.all([
       invalidateUserBoxesCache(userId.toString()),
       invalidateUserEmailsCache(userId.toString()),
+      invalidateBoxEmailsCache(id),
     ]);
 
     logger.info(
@@ -433,6 +436,7 @@ export const clearBox = async (req: Request, res: Response) => {
     await Promise.all([
       invalidateUserBoxesCache(userId.toString()),
       invalidateUserEmailsCache(userId.toString()),
+      invalidateBoxEmailsCache(id),
     ]);
 
     logger.info(`CONTROL-EMAILBOX - Cleared ${deletedEmails.deletedCount} emails from box ${box.address}`);
@@ -470,6 +474,14 @@ export const getBoxEmails = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
+    // Check cache first
+    const cacheKey = getBoxEmailsCacheKey(id, page, limit);
+    const cached = await getFromCache<{ data: any[]; pagination: any }>(cacheKey);
+    if (cached) {
+      logger.info(`CONTROL-EMAILBOX - Cache HIT for box ${id} emails page ${page}`);
+      return res.status(200).json({ success: true, ...cached });
+    }
+
     const [emails, total] = await Promise.all([
       Email.find({ to: box.address })
         .sort({ createdAt: -1 })
@@ -485,12 +497,10 @@ export const getBoxEmails = async (req: Request, res: Response) => {
       from: email.from,
       subject: email.subject,
       receivedAt: email.date || email.processedAt,
-      read: false, // Campo read não existe no modelo atual
+      read: false,
     }));
 
-    logger.info(`CONTROL-EMAILBOX - Retrieved ${emails.length} emails for box ${box.address}`);
-    res.status(200).json({
-      success: true,
+    const responseData = {
       data: formattedEmails,
       pagination: {
         page,
@@ -498,9 +508,15 @@ export const getBoxEmails = async (req: Request, res: Response) => {
         total,
         totalPages: Math.ceil(total / limit),
       },
-    });
+    };
+
+    // Cache the response (SHORT TTL - 1 min)
+    await setInCache(cacheKey, responseData, CACHE_TTL.SHORT);
+
+    logger.info(`CONTROL-EMAILBOX - Retrieved ${emails.length} emails for box ${box.address}`);
+    res.status(200).json({ success: true, ...responseData });
   } catch (error) {
     logger.error(`CONTROL-EMAILBOX - Error getting box emails: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
-};
+};;

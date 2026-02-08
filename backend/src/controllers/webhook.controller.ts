@@ -391,6 +391,9 @@ export const regenerateSecret = async (req: Request, res: Response) => {
 
     await Webhook.updateOne({ _id: id }, { $set: { secret: newSecret } });
 
+    // Invalidate cache after updating secret
+    await invalidateUserWebhooksCache(userId!);
+
     logger.info(`Webhook secret regenerated: ${webhook.name}`);
 
     res.json({

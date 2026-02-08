@@ -17,6 +17,7 @@ import {
   getUserEmailsCacheKey,
   invalidateUserEmailsCache,
   invalidateUserBoxesCache,
+  invalidateBoxEmailsCache,
   CACHE_TTL,
 } from "../services/cache.service";
 
@@ -175,7 +176,8 @@ export const processMail = async (req: Request, res: Response) => {
     try {
       await invalidateUserEmailsCache(user.id);
       await invalidateUserBoxesCache(user.id);
-      logger.info(`CONTROL-MAIL - Cache invalidated for user ${user.id}`);
+      await invalidateBoxEmailsCache(emailBox.id);
+      logger.info(`CONTROL-MAIL - Cache invalidated for user ${user.id} and box ${emailBox.id}`);
     } catch (cacheError) {
       logger.warn(
         `CONTROL-MAIL - Failed to invalidate cache: ${(cacheError as Error).message}`
@@ -368,9 +370,9 @@ export const getEmailById = async (req: Request, res: Response) => {
     const boxAddresses = userBoxes.map(box => box.address);
 
     // Find email and verify it belongs to one of user's boxes
-    const email = await Email.findOne({ 
-      _id: id, 
-      to: { $in: boxAddresses } 
+    const email = await Email.findOne({
+      _id: id,
+      to: { $in: boxAddresses }
     }).lean();
 
     if (!email) {
@@ -416,19 +418,23 @@ export const deleteEmail = async (req: Request, res: Response) => {
     const boxAddresses = userBoxes.map(box => box.address);
 
     // Find and delete email
-    const email = await Email.findOneAndDelete({ 
-      _id: id, 
-      to: { $in: boxAddresses } 
+    const email = await Email.findOneAndDelete({
+      _id: id,
+      to: { $in: boxAddresses }
     });
 
     if (!email) {
       return res.status(404).json({ success: false, message: "Email not found" });
     }
 
+    // Find the box for this email to invalidate its cache
+    const emailBox = await EmailBox.findOne({ address: email.to, userId }).select('_id').lean();
+
     // Invalidate user's emails and boxes cache (email count changed)
     await Promise.all([
       invalidateUserEmailsCache(userId.toString()),
       invalidateUserBoxesCache(userId.toString()),
+      emailBox ? invalidateBoxEmailsCache(emailBox._id.toString()) : Promise.resolve(),
     ]);
 
     logger.info(`CONTROL-MAIL - Deleted email ${id} for user ${userId}`);
