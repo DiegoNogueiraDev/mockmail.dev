@@ -108,12 +108,6 @@ export default function LandingPage() {
               >
                 Recursos
               </Link>
-              <Link
-                href="#pricing"
-                className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
-              >
-                Preços
-              </Link>
             </div>
 
             {/* Auth Buttons */}
@@ -385,78 +379,6 @@ console.log('📬 Email criado:', email);
           </div>
         </section>
 
-        {/* Pricing Section */}
-        <section
-          id="pricing"
-          className="py-20 md:py-32 bg-gray-50"
-          aria-labelledby="pricing-heading"
-        >
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center max-w-3xl mx-auto mb-16">
-              <h2
-                id="pricing-heading"
-                className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4"
-              >
-                Simples e{' '}
-                <span className="text-gradient-brand">gratuito</span>
-              </h2>
-              <p className="text-lg text-gray-600">
-                Tudo que você precisa em um único plano generoso
-              </p>
-            </div>
-
-            <div className="max-w-lg mx-auto">
-              <div className="card-brand p-8 md:p-10 text-center relative overflow-hidden">
-                {/* Background decoration */}
-                <div
-                  className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl opacity-10 -z-10"
-                  style={{ background: 'linear-gradient(135deg, #e2498a, #5636d1)' }}
-                  aria-hidden="true"
-                />
-
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm font-medium mb-6">
-                  <Check className="w-4 h-4" aria-hidden="true" />
-                  <span>Gratuito para sempre</span>
-                </div>
-
-                <div className="mb-8">
-                  <span className="text-5xl md:text-6xl font-bold text-gray-900">R$0</span>
-                  <span className="text-gray-500 text-lg">/mês</span>
-                </div>
-
-                <ul className="space-y-4 mb-10 text-left max-w-sm mx-auto" aria-label="Recursos incluídos">
-                  {[
-                    { icon: Mail, text: '500 emails recebidos/dia' },
-                    { icon: Zap, text: '500 requisições de API/dia' },
-                    { icon: Clock, text: 'Expiração de 5min a 7 dias' },
-                    { icon: Webhook, text: 'Webhooks ilimitados' },
-                    { icon: Code, text: 'Acesso completo à API' },
-                    { icon: Globe, text: 'Documentação completa' },
-                  ].map((item, index) => {
-                    const Icon = item.icon;
-                    return (
-                      <li key={index} className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
-                          <Icon className="w-4 h-4 text-purple-600" aria-hidden="true" />
-                        </div>
-                        <span className="text-gray-700">{item.text}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-
-                <Link
-                  href="/register"
-                  className="btn-brand w-full text-lg py-4 flex items-center justify-center gap-2"
-                >
-                  <span>Começar Agora</span>
-                  <ArrowRight className="w-5 h-5" aria-hidden="true" />
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* CTA Section */}
         <section
           className="py-20 md:py-32"
@@ -544,11 +466,6 @@ console.log('📬 Email criado:', email);
                 <li>
                   <Link href="#features" className="text-gray-600 hover:text-gray-900 transition-colors">
                     Recursos
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#pricing" className="text-gray-600 hover:text-gray-900 transition-colors">
-                    Preços
                   </Link>
                 </li>
               </ul>
