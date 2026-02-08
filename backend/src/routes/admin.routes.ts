@@ -284,25 +284,40 @@ router.get("/users", async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
+    const search = (req.query.search as string)?.trim() || '';
 
-    logger.info(`ADMIN-ROUTE - GET /admin/users - Admin: ${user.email}`);
+    logger.info(`ADMIN-ROUTE - GET /admin/users - Admin: ${user.email}, search: "${search}"`);
 
-    // Check cache first
-    const cacheKey = getAdminUsersCacheKey(page, limit);
-    const cached = await getFromCache<{ data: any[]; pagination: any }>(cacheKey);
-    if (cached) {
-      logger.debug(`ADMIN-ROUTE - Cache HIT for users list page:${page}`);
-      return res.json({ success: true, ...cached });
+    // Build search query
+    let query: Record<string, unknown> = {};
+    if (search) {
+      // Search by email or name (case-insensitive)
+      query = {
+        $or: [
+          { email: { $regex: search, $options: 'i' } },
+          { name: { $regex: search, $options: 'i' } },
+        ],
+      };
+    }
+
+    // Only cache if no search (searches are dynamic)
+    if (!search) {
+      const cacheKey = getAdminUsersCacheKey(page, limit);
+      const cached = await getFromCache<{ data: any[]; pagination: any }>(cacheKey);
+      if (cached) {
+        logger.debug(`ADMIN-ROUTE - Cache HIT for users list page:${page}`);
+        return res.json({ success: true, ...cached });
+      }
     }
 
     const [users, total] = await Promise.all([
-      User.find()
+      User.find(query)
         .select("-password")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      User.countDocuments(),
+      User.countDocuments(query),
     ]);
 
     // Adicionar contagem de caixas para cada usuário
@@ -330,8 +345,11 @@ router.get("/users", async (req: Request, res: Response) => {
       },
     };
 
-    // Cache the response
-    await setInCache(cacheKey, responseData, CACHE_TTL.MEDIUM);
+    // Cache the response only if no search (searches are dynamic)
+    if (!search) {
+      const cacheKey = getAdminUsersCacheKey(page, limit);
+      await setInCache(cacheKey, responseData, CACHE_TTL.MEDIUM);
+    }
 
     res.json({ success: true, ...responseData });
   } catch (error) {

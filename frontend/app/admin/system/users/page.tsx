@@ -52,9 +52,16 @@ export default function AdminUsersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchUsers = useCallback(async (page: number = 1) => {
+  const fetchUsers = useCallback(async (page: number = 1, search: string = '') => {
     try {
-      const response = await api.get<UserData[]>(`/api/admin/users?page=${page}&limit=20`);
+      const params = new URLSearchParams();
+      params.append('page', page.toString());
+      params.append('limit', '20');
+      if (search.trim()) {
+        params.append('search', search.trim());
+      }
+
+      const response = await api.get<UserData[]>(`/api/admin/users?${params.toString()}`);
       const apiResponse = response as unknown as {
         success: boolean;
         data: UserData[];
@@ -79,25 +86,31 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     if (hasPermission('admin_users')) {
-      fetchUsers();
+      fetchUsers(1, '');
     }
   }, [hasPermission, fetchUsers]);
 
+  // Debounced search effect
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      if (hasPermission('admin_users')) {
+        setLoading(true);
+        fetchUsers(1, searchTerm);
+      }
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(debounceTimer);
+  }, [searchTerm, hasPermission, fetchUsers]);
+
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchUsers(pagination.page);
+    fetchUsers(pagination.page, searchTerm);
   };
 
   const handlePageChange = (newPage: number) => {
     setLoading(true);
-    fetchUsers(newPage);
+    fetchUsers(newPage, searchTerm);
   };
-
-  const filteredUsers = users.filter(
-    (user) =>
-      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   const getRoleIcon = (role: string) => {
     switch (role) {
@@ -215,7 +228,7 @@ export default function AdminUsersPage() {
         </div>
 
         {/* Users Table */}
-        {filteredUsers.length === 0 ? (
+        {users.length === 0 ? (
           <div className="empty-state py-16">
             <Users className="empty-state-icon" />
             <p className="empty-state-title">Nenhum usuário encontrado</p>
@@ -251,7 +264,7 @@ export default function AdminUsersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredUsers.map((user) => (
+                {users.map((user) => (
                   <tr
                     key={user._id}
                     className="hover:bg-gray-50 cursor-pointer group"
