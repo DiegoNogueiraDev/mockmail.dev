@@ -5,7 +5,7 @@ import {
   createUser,
   comparePassword,
 } from "../services/user.service";
-import { generateTokenPair, verifyAccessToken, blacklistToken } from "../services/token.service";
+import { generateTokenPair, verifyAccessToken, blacklistToken, refreshTokens } from "../services/token.service";
 import logger from "../utils/logger";
 
 // Cookie configuration for httpOnly tokens
@@ -281,16 +281,15 @@ export const refresh = async (req: Request, res: Response) => {
       });
     }
 
-    const decoded = await verifyAccessToken(refreshToken);
-    if (!decoded || !decoded.id) {
+    // Use refreshTokens which verifies with JWT_REFRESH_SECRET correctly
+    const tokens = await refreshTokens(refreshToken);
+
+    if (!tokens) {
       return res.status(401).json({
         success: false,
-        message: "Invalid refresh token"
+        message: "Invalid or expired refresh token"
       });
     }
-
-    // Generate new token pair
-    const tokens = await generateTokenPair(decoded.id);
 
     // Set new httpOnly cookies
     res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
@@ -302,7 +301,7 @@ export const refresh = async (req: Request, res: Response) => {
       maxAge: REFRESH_TOKEN_MAX_AGE,
     });
 
-    logger.info(`CONTROL-AUTH - Token refreshed for user: ${decoded.id}`);
+    logger.info(`CONTROL-AUTH - Token refreshed successfully`);
     res.status(200).json({
       success: true,
       accessToken: tokens.accessToken,
