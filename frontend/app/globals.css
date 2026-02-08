@@ -659,30 +659,28 @@ textarea:focus-visible,
     }
   }
 
-  /* Skeleton variants */
+  /* Skeleton variants - using direct styles instead of @apply skeleton to avoid circular reference */
   .skeleton-text {
-    @apply h-4 skeleton;
+    @apply h-4 bg-gray-200 rounded relative overflow-hidden;
   }
 
   .skeleton-title {
-    @apply h-6 skeleton;
+    @apply h-6 bg-gray-200 rounded relative overflow-hidden;
   }
 
   .skeleton-avatar {
-    @apply skeleton;
+    @apply bg-gray-200 rounded relative overflow-hidden;
   }
 
   .skeleton-card {
-    @apply skeleton p-4;
+    @apply bg-gray-200 rounded relative overflow-hidden p-4;
   }
 
-  /* Respect reduced motion */
+  /* Respect reduced motion - remove shimmer animation for users who prefer reduced motion */
   @media (prefers-reduced-motion: reduce) {
     .skeleton::after {
       animation: none;
-    }
-    .skeleton {
-      @apply animate-pulse;
+      display: none;
     }
   }
 
