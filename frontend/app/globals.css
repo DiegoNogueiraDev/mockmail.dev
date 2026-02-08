@@ -629,9 +629,61 @@ textarea:focus-visible,
     -webkit-backdrop-filter: blur(10px);
   }
 
-  /* Skeleton loading */
+  /* Skeleton loading - Instagram style shimmer */
   .skeleton {
-    @apply bg-gray-200 animate-pulse rounded;
+    @apply bg-gray-200 rounded relative overflow-hidden;
+  }
+
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.4) 50%,
+      transparent 100%
+    );
+    animation: shimmer 1.5s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Skeleton variants */
+  .skeleton-text {
+    @apply h-4 skeleton;
+  }
+
+  .skeleton-title {
+    @apply h-6 skeleton;
+  }
+
+  .skeleton-avatar {
+    @apply skeleton;
+  }
+
+  .skeleton-card {
+    @apply skeleton p-4;
+  }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton::after {
+      animation: none;
+    }
+    .skeleton {
+      @apply animate-pulse;
+    }
   }
 
   /* Hide scrollbar but keep functionality */

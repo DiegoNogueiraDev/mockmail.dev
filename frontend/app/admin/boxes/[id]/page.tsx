@@ -17,6 +17,7 @@ import {
   Eraser,
   ExternalLink,
 } from 'lucide-react';
+import { SkeletonBoxHeader, SkeletonEmailsList, SkeletonLoadingMore } from '@/components/SkeletonLoader';
 import toast from 'react-hot-toast';
 
 interface EmailBox {
@@ -74,11 +75,11 @@ export default function BoxDetailPage() {
     setIsInitialLoad(true);
     pageRef.current = 1;
     setPage(1);
-    
+
     try {
       const response = await api.get<Email[]>(`/api/boxes/${boxId}/emails?page=1&limit=20`);
       const apiResponse = response as unknown as { success: boolean; data: Email[]; pagination: { totalPages: number } };
-      
+
       if (apiResponse.success) {
         setEmails(apiResponse.data || []);
         setTotalPages(apiResponse.pagination?.totalPages || 1);
@@ -94,11 +95,11 @@ export default function BoxDetailPage() {
   // Fetch para carregar mais emails (infinite scroll)
   const loadMoreEmails = useCallback(async () => {
     const nextPage = pageRef.current + 1;
-    
+
     try {
       const response = await api.get<Email[]>(`/api/boxes/${boxId}/emails?page=${nextPage}&limit=20`);
       const apiResponse = response as unknown as { success: boolean; data: Email[]; pagination: { totalPages: number } };
-      
+
       if (apiResponse.success) {
         setEmails(prev => [...prev, ...(apiResponse.data || [])]);
         setTotalPages(apiResponse.pagination?.totalPages || 1);
@@ -196,13 +197,13 @@ export default function BoxDetailPage() {
     return (
       <div className="space-y-6">
         <div className="w-32 h-6 skeleton" />
-        <div className="card-brand p-8">
-          <div className="flex gap-4">
-            <div className="w-14 h-14 skeleton rounded-2xl" />
-            <div className="space-y-2 flex-1">
-              <div className="w-64 h-6 skeleton" />
-              <div className="w-32 h-4 skeleton" />
-            </div>
+        <SkeletonBoxHeader />
+        <div className="card-brand">
+          <div className="p-4 border-b border-gray-200">
+            <div className="w-40 h-6 skeleton" />
+          </div>
+          <div className="p-4">
+            <SkeletonEmailsList count={5} />
           </div>
         </div>
       </div>
@@ -375,12 +376,12 @@ export default function BoxDetailPage() {
       </div>
 
       {/* Infinite Scroll Sentinel */}
-      <div 
-        ref={sentinelRef} 
-        className="h-4" 
+      <div
+        ref={sentinelRef}
+        className="h-4"
         data-testid="emails-sentinel"
       />
-      
+
       {/* Loading More Indicator */}
       {isLoadingMore && (
         <div className="flex items-center justify-center py-4 gap-2 text-gray-500">
@@ -388,7 +389,7 @@ export default function BoxDetailPage() {
           <span className="text-sm">Carregando mais emails...</span>
         </div>
       )}
-      
+
       {/* End of List Indicator */}
       {!emailsLoading && !isLoadingMore && page >= totalPages && emails.length > 0 && (
         <p className="text-center text-sm text-gray-400 py-4">

@@ -20,6 +20,7 @@ import {
   Clock,
   AlertTriangle,
 } from 'lucide-react';
+import { SkeletonBoxesList, SkeletonLoadingMore } from '@/components/SkeletonLoader';
 import { ExpirationTimer, CircularExpirationTimer } from '@/components/ExpirationTimer';
 import toast from 'react-hot-toast';
 
@@ -278,16 +279,8 @@ export default function BoxesPage() {
       {/* Boxes List */}
       <div className="card-brand" data-testid="boxes-list">
         {loading ? (
-          <div className="p-8">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex gap-4 p-4 border-b border-gray-100 last:border-0">
-                <div className="w-12 h-12 skeleton rounded-xl" />
-                <div className="flex-1 space-y-2">
-                  <div className="w-64 h-5 skeleton" />
-                  <div className="w-32 h-4 skeleton" />
-                </div>
-              </div>
-            ))}
+          <div className="p-4">
+            <SkeletonBoxesList count={6} />
           </div>
         ) : filteredBoxes.length === 0 ? (
           <div className="empty-state py-16">
@@ -511,12 +504,7 @@ export default function BoxesPage() {
       />
 
       {/* Loading More Indicator */}
-      {isLoadingMore && (
-        <div className="flex items-center justify-center py-4 gap-2 text-gray-500">
-          <RefreshCw className="w-4 h-4 animate-spin" />
-          <span className="text-sm">Carregando mais caixas...</span>
-        </div>
-      )}
+      {isLoadingMore && <SkeletonLoadingMore />}
 
       {/* End of List Indicator */}
       {!loading && !isLoadingMore && page >= totalPages && boxes.length > 0 && (
