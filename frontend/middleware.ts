@@ -57,13 +57,14 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // 5. Se está na raiz, redirecionar baseado no status de autenticação
+  // 5. Se está na raiz, redirecionar para dashboard apenas se autenticado
+  // Caso contrário, mostrar a landing page
   if (pathname === '/') {
     if (accessToken) {
       return NextResponse.redirect(new URL('/admin/dashboard', request.url));
-    } else {
-      return NextResponse.redirect(new URL('/login', request.url));
     }
+    // Mostrar landing page para visitantes não autenticados
+    return NextResponse.next();
   }
 
   // 6. Se está autenticado e tenta acessar login, redirecionar para dashboard
