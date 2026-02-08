@@ -99,6 +99,147 @@ router.get("/stats", async (req: Request, res: Response) => {
 });
 
 /**
+ * @route GET /admin/charts
+ * @desc Dados para gráficos de estatísticas por período
+ * @access Admin only
+ */
+router.get("/charts", async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const period = (req.query.period as string) || 'week';
+
+    logger.info(`ADMIN-ROUTE - GET /admin/charts?period=${period} - Admin: ${user.email}`);
+
+    const now = new Date();
+    let startDate: Date;
+    let groupFormat: string;
+    let dateFormat: string;
+
+    switch (period) {
+      case 'today':
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        groupFormat = '%H:00';
+        dateFormat = 'hour';
+        break;
+      case 'week':
+        startDate = new Date(now);
+        startDate.setDate(now.getDate() - 7);
+        groupFormat = '%Y-%m-%d';
+        dateFormat = 'day';
+        break;
+      case 'lastWeek':
+        startDate = new Date(now);
+        startDate.setDate(now.getDate() - 14);
+        const endLastWeek = new Date(now);
+        endLastWeek.setDate(now.getDate() - 7);
+        groupFormat = '%Y-%m-%d';
+        dateFormat = 'day';
+        break;
+      case 'month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        groupFormat = '%Y-%m-%d';
+        dateFormat = 'day';
+        break;
+      case 'year':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        groupFormat = '%Y-%m';
+        dateFormat = 'month';
+        break;
+      default:
+        startDate = new Date(now);
+        startDate.setDate(now.getDate() - 7);
+        groupFormat = '%Y-%m-%d';
+        dateFormat = 'day';
+    }
+
+    // Emails por período
+    const emailsByPeriod = await Email.aggregate([
+      {
+        $match: {
+          receivedAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: groupFormat, date: '$receivedAt' } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Caixas criadas por período
+    const boxesByPeriod = await EmailBox.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: groupFormat, date: '$createdAt' } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Usuários criados por período
+    const usersByPeriod = await User.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: groupFormat, date: '$createdAt' } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Combinar dados em formato adequado para gráficos
+    const allDates = new Set([
+      ...emailsByPeriod.map((e) => e._id),
+      ...boxesByPeriod.map((b) => b._id),
+      ...usersByPeriod.map((u) => u._id),
+    ]);
+
+    const chartData = Array.from(allDates)
+      .sort()
+      .map((date) => ({
+        date,
+        emails: emailsByPeriod.find((e) => e._id === date)?.count || 0,
+        boxes: boxesByPeriod.find((b) => b._id === date)?.count || 0,
+        users: usersByPeriod.find((u) => u._id === date)?.count || 0,
+      }));
+
+    // Totais do período
+    const totals = {
+      emails: emailsByPeriod.reduce((sum, e) => sum + e.count, 0),
+      boxes: boxesByPeriod.reduce((sum, b) => sum + b.count, 0),
+      users: usersByPeriod.reduce((sum, u) => sum + u.count, 0),
+    };
+
+    res.json({
+      success: true,
+      data: {
+        period,
+        dateFormat,
+        startDate,
+        chartData,
+        totals,
+      },
+    });
+  } catch (error) {
+    logger.error(`ADMIN-ROUTE - GET /admin/charts - Error: ${(error as Error).message}`);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+/**
  * @route GET /admin/users
  * @desc Lista todos os usuários
  * @access Admin only
