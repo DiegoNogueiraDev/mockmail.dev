@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/apiClient';
+import Link from 'next/link';
 import {
   Users,
   Search,
@@ -10,12 +11,12 @@ import {
   AlertCircle,
   Mail,
   Inbox,
-  Calendar,
   Shield,
   ShieldCheck,
   ShieldAlert,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
 } from 'lucide-react';
 
 interface UserData {
@@ -251,14 +252,21 @@ export default function AdminUsersPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredUsers.map((user) => (
-                  <tr key={user._id} className="hover:bg-gray-50">
+                  <tr
+                    key={user._id}
+                    className="hover:bg-gray-50 cursor-pointer group"
+                    onClick={() => window.location.href = `/admin/system/users/${user._id}`}
+                  >
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#e2498a] to-[#5636d1] flex items-center justify-center text-white font-medium">
                           {user.name.charAt(0).toUpperCase()}
                         </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{user.name}</p>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-gray-900">{user.name}</p>
+                            <ExternalLink className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
                           <p className="text-sm text-gray-500">{user.email}</p>
                         </div>
                       </div>

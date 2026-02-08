@@ -295,6 +295,118 @@ router.get("/users", async (req: Request, res: Response) => {
 });
 
 /**
+ * @route GET /admin/users/:id
+ * @desc Detalhes de um usuário específico com estatísticas
+ * @access Admin only
+ */
+router.get("/users/:id", async (req: Request, res: Response) => {
+  try {
+    const adminUser = (req as any).user;
+    const userId = req.params.id;
+
+    logger.info(`ADMIN-ROUTE - GET /admin/users/${userId} - Admin: ${adminUser.email}`);
+
+    // Buscar usuário
+    const user = await User.findById(userId).select("-password").lean();
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "Usuário não encontrado" });
+    }
+
+    // Buscar estatísticas do usuário
+    const [
+      totalBoxes,
+      activeBoxes,
+      expiredBoxes,
+      totalEmails,
+      recentBoxes,
+      emailsByDay,
+    ] = await Promise.all([
+      // Total de caixas
+      EmailBox.countDocuments({ userId: user._id }),
+      // Caixas ativas
+      EmailBox.countDocuments({
+        userId: user._id,
+        $or: [
+          { expiresAt: { $exists: false } },
+          { expiresAt: { $gt: new Date() } },
+        ],
+      }),
+      // Caixas expiradas
+      EmailBox.countDocuments({
+        userId: user._id,
+        expiresAt: { $exists: true, $lte: new Date() },
+      }),
+      // Total de emails
+      Email.countDocuments({
+        emailBox: { $in: await EmailBox.find({ userId: user._id }).select("_id") },
+      }),
+      // Últimas 5 caixas
+      EmailBox.find({ userId: user._id })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean(),
+      // Emails por dia (últimos 7 dias)
+      Email.aggregate([
+        {
+          $lookup: {
+            from: "emailboxes",
+            localField: "emailBox",
+            foreignField: "_id",
+            as: "box",
+          },
+        },
+        { $unwind: "$box" },
+        { $match: { "box.userId": user._id } },
+        {
+          $match: {
+            receivedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+          },
+        },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m-%d", date: "$receivedAt" } },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+    ]);
+
+    // Adicionar contagem de emails para cada caixa recente
+    const recentBoxesWithStats = await Promise.all(
+      recentBoxes.map(async (box: any) => {
+        const emailCount = await Email.countDocuments({ emailBox: box._id });
+        const expired = box.expiresAt ? new Date(box.expiresAt) <= new Date() : false;
+        return {
+          ...box,
+          emailCount,
+          expired,
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      data: {
+        user,
+        stats: {
+          totalBoxes,
+          activeBoxes,
+          expiredBoxes,
+          totalEmails,
+        },
+        recentBoxes: recentBoxesWithStats,
+        emailsByDay,
+      },
+    });
+  } catch (error) {
+    logger.error(`ADMIN-ROUTE - GET /admin/users/:id - Error: ${(error as Error).message}`);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+/**
  * @route GET /admin/boxes
  * @desc Lista todas as caixas (de todos os usuários)
  * @access Admin only
