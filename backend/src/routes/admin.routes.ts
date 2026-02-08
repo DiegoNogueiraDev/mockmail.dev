@@ -184,16 +184,16 @@ router.get("/charts", async (req: Request, res: Response) => {
         dateFormat = 'day';
     }
 
-    // Emails por período
+    // Emails por período (usando createdAt pois receivedAt não existe no modelo)
     const emailsByPeriod = await Email.aggregate([
       {
         $match: {
-          receivedAt: { $gte: startDate },
+          createdAt: { $gte: startDate },
         },
       },
       {
         $group: {
-          _id: { $dateToString: { format: groupFormat, date: '$receivedAt' } },
+          _id: { $dateToString: { format: groupFormat, date: '$createdAt' } },
           count: { $sum: 1 },
         },
       },
