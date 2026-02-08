@@ -5,6 +5,7 @@ import EmailHistory from "../models/EmailHistory";
 import EmailBox from "../models/EmailBox";
 import Email from "../models/Email";
 import User from "../models/User";
+import UserSession from "../models/UserSession";
 import {
   getEmailHistoryForAdmin,
   getEmailHistoryById,
@@ -693,6 +694,191 @@ router.post("/archive-box/:id", async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error(`ADMIN-ROUTE - POST /admin/archive-box/:id - Error: ${(error as Error).message}`);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+// =====================================================
+// Sessões de Usuário
+// =====================================================
+
+/**
+ * @route GET /admin/sessions
+ * @desc Lista todas as sessões (com filtros opcionais)
+ * @access Admin
+ */
+router.get("/sessions", async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const skip = (page - 1) * limit;
+    const status = req.query.status as string;
+    const userId = req.query.userId as string;
+
+    // Build query
+    const query: Record<string, unknown> = {};
+    if (status && ['active', 'logged_out', 'expired', 'revoked'].includes(status)) {
+      query.status = status;
+    }
+    if (userId) {
+      query.userId = userId;
+    }
+
+    const [sessions, total] = await Promise.all([
+      UserSession.find(query)
+        .populate('userId', 'email name role')
+        .sort({ loginAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      UserSession.countDocuments(query),
+    ]);
+
+    // Get active sessions count
+    const activeSessions = await UserSession.countDocuments({
+      status: 'active',
+      expiresAt: { $gt: new Date() }
+    });
+
+    logger.info(`ADMIN-SESSIONS - Listed ${sessions.length} sessions (page ${page})`);
+
+    res.json({
+      success: true,
+      data: sessions.map((session: any) => ({
+        id: session._id,
+        user: session.userId ? {
+          id: session.userId._id,
+          email: session.userId.email,
+          name: session.userId.name,
+          role: session.userId.role,
+        } : null,
+        loginAt: session.loginAt,
+        logoutAt: session.logoutAt,
+        status: session.status,
+        ipAddress: session.ipAddress,
+        deviceInfo: session.deviceInfo,
+        lastActivityAt: session.lastActivityAt,
+        expiresAt: session.expiresAt,
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      stats: {
+        activeSessions,
+      },
+    });
+  } catch (error) {
+    logger.error(`ADMIN-SESSIONS - Error listing sessions: ${(error as Error).message}`);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+/**
+ * @route GET /admin/sessions/active
+ * @desc Lista apenas sessões ativas
+ * @access Admin
+ */
+router.get("/sessions/active", async (req: Request, res: Response) => {
+  try {
+    // First expire old sessions
+    await UserSession.expireOldSessions();
+
+    const sessions = await UserSession.find({
+      status: 'active',
+      expiresAt: { $gt: new Date() }
+    })
+      .populate('userId', 'email name role')
+      .sort({ loginAt: -1 })
+      .lean();
+
+    logger.info(`ADMIN-SESSIONS - Found ${sessions.length} active sessions`);
+
+    res.json({
+      success: true,
+      data: sessions.map((session: any) => ({
+        id: session._id,
+        user: session.userId ? {
+          id: session.userId._id,
+          email: session.userId.email,
+          name: session.userId.name,
+          role: session.userId.role,
+        } : null,
+        loginAt: session.loginAt,
+        status: session.status,
+        ipAddress: session.ipAddress,
+        deviceInfo: session.deviceInfo,
+        lastActivityAt: session.lastActivityAt,
+        expiresAt: session.expiresAt,
+      })),
+      count: sessions.length,
+    });
+  } catch (error) {
+    logger.error(`ADMIN-SESSIONS - Error getting active sessions: ${(error as Error).message}`);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+/**
+ * @route POST /admin/sessions/:id/revoke
+ * @desc Revogar uma sessão específica
+ * @access Admin
+ */
+router.post("/sessions/:id/revoke", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const adminUser = (req as any).user;
+
+    const session = await UserSession.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          status: 'revoked',
+          logoutAt: new Date()
+        }
+      },
+      { new: true }
+    ).populate('userId', 'email name');
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: "Sessão não encontrada" });
+    }
+
+    logger.info(`ADMIN-SESSIONS - Session ${id} revoked by ${adminUser.email}`);
+
+    res.json({
+      success: true,
+      message: "Sessão revogada com sucesso",
+      data: session,
+    });
+  } catch (error) {
+    logger.error(`ADMIN-SESSIONS - Error revoking session: ${(error as Error).message}`);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+/**
+ * @route POST /admin/sessions/expire-old
+ * @desc Expira todas as sessões que passaram do prazo
+ * @access Admin
+ */
+router.post("/sessions/expire-old", async (req: Request, res: Response) => {
+  try {
+    const result = await UserSession.expireOldSessions();
+
+    logger.info(`ADMIN-SESSIONS - Expired ${result.modifiedCount} old sessions`);
+
+    res.json({
+      success: true,
+      message: `${result.modifiedCount} sessões expiradas`,
+      data: {
+        expiredCount: result.modifiedCount,
+      },
+    });
+  } catch (error) {
+    logger.error(`ADMIN-SESSIONS - Error expiring sessions: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 });

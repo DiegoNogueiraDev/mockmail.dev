@@ -20,6 +20,7 @@ import {
   BarChart3,
   Archive,
   Shield,
+  LogIn,
 } from 'lucide-react';
 
 interface NavItem {
@@ -43,6 +44,7 @@ const adminNavigation: NavItem[] = [
   { name: 'Estatísticas', href: '/admin/system/stats', icon: BarChart3, permission: 'admin_users' },
   { name: 'Usuários', href: '/admin/system/users', icon: Users, permission: 'admin_users' },
   { name: 'Todas as Caixas', href: '/admin/system/boxes', icon: Archive, permission: 'admin_users' },
+  { name: 'Sessões', href: '/admin/system/sessions', icon: LogIn, permission: 'admin_users' },
   { name: 'Configurações', href: '/admin/settings', icon: Settings, permission: 'admin_system' },
 ];
 

@@ -6,6 +6,7 @@ import {
   comparePassword,
 } from "../services/user.service";
 import { generateTokenPair, verifyAccessToken, blacklistToken, refreshTokens } from "../services/token.service";
+import UserSession from "../models/UserSession";
 import logger from "../utils/logger";
 
 // Cookie configuration for httpOnly tokens
@@ -112,6 +113,20 @@ export const login = async (req: Request, res: Response) => {
 
     // Gerando par de tokens (access + refresh)
     const tokens = await generateTokenPair(user.id);
+
+    // Registrar sessão de login
+    try {
+      await UserSession.createSession(user.id, {
+        ip: req.ip || req.headers['x-forwarded-for'] as string,
+        headers: req.headers as Record<string, string | string[] | undefined>
+      });
+      // Atualizar lastLogin do usuário
+      await user.updateOne({ lastLogin: new Date() });
+    } catch (sessionError) {
+      logger.warn(`CONTROL-AUTH - Falha ao registrar sessão: ${(sessionError as Error).message}`);
+      // Não falha o login se a sessão não puder ser criada
+    }
+
     logger.info(`CONTROL-AUTH - Login bem-sucedido para o email: ${sanitizedEmail}`);
 
     // Set httpOnly cookies for tokens
@@ -323,6 +338,20 @@ export const logout = async (req: Request, res: Response) => {
   try {
     const accessToken = req.cookies?.[ACCESS_TOKEN_COOKIE];
     const refreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE];
+
+    // Try to get user ID to end session
+    const user = (req as any).user;
+    const userId = user?._id || user?.id;
+
+    // End user session
+    if (userId) {
+      try {
+        await UserSession.endSession(userId, 'logged_out');
+        logger.info(`CONTROL-AUTH - Session ended for user ${userId}`);
+      } catch (sessionError) {
+        logger.warn(`CONTROL-AUTH - Failed to end session: ${(sessionError as Error).message}`);
+      }
+    }
 
     // Blacklist tokens if available
     if (accessToken) {
