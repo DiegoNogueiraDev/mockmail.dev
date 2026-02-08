@@ -3,7 +3,7 @@ import { getRedisClient } from '../config/redis';
 import logger from '../utils/logger';
 
 // Limite de interações por dia por usuário (requisições API + emails recebidos)
-const DAILY_INTERACTION_LIMIT = 200;
+const DAILY_INTERACTION_LIMIT = 500;
 
 // Interface para o request com user (compatível com authMiddleware)
 interface AuthenticatedRequest extends Request {
@@ -153,7 +153,7 @@ export async function getUserDailyUsage(userId: string): Promise<{
  */
 export async function incrementUserDailyUsage(userId: string): Promise<boolean> {
   const redis = getRedisClient();
-  
+
   if (!redis) {
     logger.warn('DAILY-LIMIT - Redis não disponível, permitindo operação');
     return true;
@@ -163,7 +163,7 @@ export async function incrementUserDailyUsage(userId: string): Promise<boolean> 
 
   try {
     const currentCount = await redis.incr(key);
-    
+
     // Se é a primeira interação do dia, define o TTL até meia-noite
     if (currentCount === 1) {
       const ttl = getSecondsUntilMidnight();

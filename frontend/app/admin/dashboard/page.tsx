@@ -156,6 +156,45 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Welcome Banner - 500 emails/day */}
+      <div
+        className="relative overflow-hidden rounded-2xl p-6 text-white"
+        style={{ background: 'linear-gradient(135deg, #5636d1, #e2498a)' }}
+        role="banner"
+        data-testid="welcome-banner"
+      >
+        {/* Background pattern */}
+        <div
+          className="absolute inset-0 opacity-10"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+          }}
+          aria-hidden="true"
+        />
+        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Mail className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold mb-1">
+                🎉 500 emails e requisições diárias!
+              </h2>
+              <p className="text-white/80 text-sm md:text-base">
+                Agora você pode aproveitar ainda mais as integrações via API e webhooks.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/docs/api"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-purple-700 font-semibold rounded-xl hover:bg-white/90 transition-colors flex-shrink-0"
+          >
+            <span>Ver API</span>
+            <ArrowUpRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </div>
+
       {/* Error Message */}
       {error && (
         <div

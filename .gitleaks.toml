@@ -115,4 +115,7 @@ regexes = [
   '''example\.com''',
   '''localhost''',
   '''127\.0\.0\.1''',
+  '''w3\.org/2000/svg''',
+  '''data:image/svg\+xml''',
+  '''xmlns.*w3\.org''',
 ]
