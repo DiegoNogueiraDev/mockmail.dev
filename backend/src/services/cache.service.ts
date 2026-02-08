@@ -27,6 +27,7 @@ const CACHE_CONFIG = {
     STATS: 'cache:stats:',
     WEBHOOKS: 'cache:webhooks:',
     API_KEYS: 'cache:apikeys:',
+    ADMIN: 'cache:admin:',
   },
 };
 
@@ -237,6 +238,90 @@ export const invalidateAllUserCache = async (userId: string): Promise<void> => {
     invalidateUserWebhooksCache(userId),
     invalidateUserApiKeysCache(userId),
   ]);
+};
+
+// =====================================================
+// Admin-specific cache helpers
+// =====================================================
+
+/**
+ * Get cache key for admin platform stats
+ */
+export const getAdminStatsCacheKey = (): string => {
+  return `${CACHE_CONFIG.PREFIX.ADMIN}platform:stats`;
+};
+
+/**
+ * Get cache key for admin charts data
+ */
+export const getAdminChartsCacheKey = (period: string): string => {
+  return `${CACHE_CONFIG.PREFIX.ADMIN}charts:${period}`;
+};
+
+/**
+ * Get cache key for admin users list
+ */
+export const getAdminUsersCacheKey = (page: number, limit: number): string => {
+  return `${CACHE_CONFIG.PREFIX.ADMIN}users:list:${page}:${limit}`;
+};
+
+/**
+ * Get cache key for admin user details
+ */
+export const getAdminUserDetailsCacheKey = (userId: string): string => {
+  return `${CACHE_CONFIG.PREFIX.ADMIN}users:${userId}:details`;
+};
+
+/**
+ * Get cache key for admin boxes list
+ */
+export const getAdminBoxesCacheKey = (page: number, limit: number, status: string): string => {
+  return `${CACHE_CONFIG.PREFIX.ADMIN}boxes:list:${page}:${limit}:${status}`;
+};
+
+/**
+ * Get cache key for admin history list
+ */
+export const getAdminHistoryCacheKey = (page: number, limit: number, userId?: string, boxAddress?: string): string => {
+  const userPart = userId || 'all';
+  const boxPart = boxAddress || 'all';
+  return `${CACHE_CONFIG.PREFIX.ADMIN}history:list:${page}:${limit}:${userPart}:${boxPart}`;
+};
+
+/**
+ * Get cache key for admin history details
+ */
+export const getAdminHistoryDetailsCacheKey = (historyId: string): string => {
+  return `${CACHE_CONFIG.PREFIX.ADMIN}history:${historyId}`;
+};
+
+/**
+ * Invalidate all admin cache
+ */
+export const invalidateAdminCache = async (): Promise<void> => {
+  await invalidatePattern(`${CACHE_CONFIG.PREFIX.ADMIN}*`);
+};
+
+/**
+ * Invalidate admin stats cache
+ */
+export const invalidateAdminStatsCache = async (): Promise<void> => {
+  await invalidatePattern(`${CACHE_CONFIG.PREFIX.ADMIN}platform:*`);
+  await invalidatePattern(`${CACHE_CONFIG.PREFIX.ADMIN}charts:*`);
+};
+
+/**
+ * Invalidate admin users cache
+ */
+export const invalidateAdminUsersCache = async (): Promise<void> => {
+  await invalidatePattern(`${CACHE_CONFIG.PREFIX.ADMIN}users:*`);
+};
+
+/**
+ * Invalidate admin boxes cache
+ */
+export const invalidateAdminBoxesCache = async (): Promise<void> => {
+  await invalidatePattern(`${CACHE_CONFIG.PREFIX.ADMIN}boxes:*`);
 };
 
 // Export configuration for use in other modules

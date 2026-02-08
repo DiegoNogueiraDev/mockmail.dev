@@ -12,6 +12,19 @@ import {
   processExpiredBoxes,
   archiveExpiredBoxEmails,
 } from "../services/emailHistory.service";
+import {
+  getFromCache,
+  setInCache,
+  getAdminStatsCacheKey,
+  getAdminChartsCacheKey,
+  getAdminUsersCacheKey,
+  getAdminUserDetailsCacheKey,
+  getAdminBoxesCacheKey,
+  getAdminHistoryCacheKey,
+  getAdminHistoryDetailsCacheKey,
+  invalidateAdminStatsCache,
+  CACHE_TTL,
+} from "../services/cache.service";
 
 const router = Router();
 
@@ -46,6 +59,14 @@ router.get("/stats", async (req: Request, res: Response) => {
     const user = (req as any).user;
     logger.info(`ADMIN-ROUTE - GET /admin/stats - Admin: ${user.email}`);
 
+    // Check cache first
+    const cacheKey = getAdminStatsCacheKey();
+    const cached = await getFromCache<{ platform: any; history: any; usersByRole: any }>(cacheKey);
+    if (cached) {
+      logger.debug(`ADMIN-ROUTE - Cache HIT for stats`);
+      return res.json({ success: true, data: cached });
+    }
+
     // Estatísticas em tempo real
     const [
       totalUsers,
@@ -75,23 +96,25 @@ router.get("/stats", async (req: Request, res: Response) => {
       { $group: { _id: "$role", count: { $sum: 1 } } },
     ]);
 
-    res.json({
-      success: true,
-      data: {
-        platform: {
-          totalUsers,
-          totalBoxes,
-          totalEmails,
-          activeBoxes,
-          expiredBoxes,
-        },
-        history: historyStats,
-        usersByRole: usersByRole.reduce((acc, cur) => {
-          acc[cur._id] = cur.count;
-          return acc;
-        }, {} as Record<string, number>),
+    const responseData = {
+      platform: {
+        totalUsers,
+        totalBoxes,
+        totalEmails,
+        activeBoxes,
+        expiredBoxes,
       },
-    });
+      history: historyStats,
+      usersByRole: usersByRole.reduce((acc, cur) => {
+        acc[cur._id] = cur.count;
+        return acc;
+      }, {} as Record<string, number>),
+    };
+
+    // Cache the response
+    await setInCache(cacheKey, responseData, CACHE_TTL.STATS);
+
+    res.json({ success: true, data: responseData });
   } catch (error) {
     logger.error(`ADMIN-ROUTE - GET /admin/stats - Error: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -109,6 +132,14 @@ router.get("/charts", async (req: Request, res: Response) => {
     const period = (req.query.period as string) || 'week';
 
     logger.info(`ADMIN-ROUTE - GET /admin/charts?period=${period} - Admin: ${user.email}`);
+
+    // Check cache first
+    const cacheKey = getAdminChartsCacheKey(period);
+    const cached = await getFromCache<any>(cacheKey);
+    if (cached) {
+      logger.debug(`ADMIN-ROUTE - Cache HIT for charts:${period}`);
+      return res.json({ success: true, data: cached });
+    }
 
     const now = new Date();
     let startDate: Date;
@@ -223,16 +254,18 @@ router.get("/charts", async (req: Request, res: Response) => {
       users: usersByPeriod.reduce((sum, u) => sum + u.count, 0),
     };
 
-    res.json({
-      success: true,
-      data: {
-        period,
-        dateFormat,
-        startDate,
-        chartData,
-        totals,
-      },
-    });
+    const responseData = {
+      period,
+      dateFormat,
+      startDate,
+      chartData,
+      totals,
+    };
+
+    // Cache the response (SHORT TTL for frequently changing data)
+    await setInCache(cacheKey, responseData, CACHE_TTL.SHORT);
+
+    res.json({ success: true, data: responseData });
   } catch (error) {
     logger.error(`ADMIN-ROUTE - GET /admin/charts - Error: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -252,6 +285,14 @@ router.get("/users", async (req: Request, res: Response) => {
     const skip = (page - 1) * limit;
 
     logger.info(`ADMIN-ROUTE - GET /admin/users - Admin: ${user.email}`);
+
+    // Check cache first
+    const cacheKey = getAdminUsersCacheKey(page, limit);
+    const cached = await getFromCache<{ data: any[]; pagination: any }>(cacheKey);
+    if (cached) {
+      logger.debug(`ADMIN-ROUTE - Cache HIT for users list page:${page}`);
+      return res.json({ success: true, ...cached });
+    }
 
     const [users, total] = await Promise.all([
       User.find()
@@ -278,8 +319,7 @@ router.get("/users", async (req: Request, res: Response) => {
       })
     );
 
-    res.json({
-      success: true,
+    const responseData = {
       data: usersWithStats,
       pagination: {
         page,
@@ -287,7 +327,12 @@ router.get("/users", async (req: Request, res: Response) => {
         total,
         totalPages: Math.ceil(total / limit),
       },
-    });
+    };
+
+    // Cache the response
+    await setInCache(cacheKey, responseData, CACHE_TTL.MEDIUM);
+
+    res.json({ success: true, ...responseData });
   } catch (error) {
     logger.error(`ADMIN-ROUTE - GET /admin/users - Error: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -305,6 +350,14 @@ router.get("/users/:id", async (req: Request, res: Response) => {
     const userId = req.params.id;
 
     logger.info(`ADMIN-ROUTE - GET /admin/users/${userId} - Admin: ${adminUser.email}`);
+
+    // Check cache first
+    const cacheKey = getAdminUserDetailsCacheKey(userId);
+    const cached = await getFromCache<any>(cacheKey);
+    if (cached) {
+      logger.debug(`ADMIN-ROUTE - Cache HIT for user details:${userId}`);
+      return res.json({ success: true, data: cached });
+    }
 
     // Buscar usuário
     const user = await User.findById(userId).select("-password").lean();
@@ -386,20 +439,22 @@ router.get("/users/:id", async (req: Request, res: Response) => {
       })
     );
 
-    res.json({
-      success: true,
-      data: {
-        user,
-        stats: {
-          totalBoxes,
-          activeBoxes,
-          expiredBoxes,
-          totalEmails,
-        },
-        recentBoxes: recentBoxesWithStats,
-        emailsByDay,
+    const responseData = {
+      user,
+      stats: {
+        totalBoxes,
+        activeBoxes,
+        expiredBoxes,
+        totalEmails,
       },
-    });
+      recentBoxes: recentBoxesWithStats,
+      emailsByDay,
+    };
+
+    // Cache the response
+    await setInCache(cacheKey, responseData, CACHE_TTL.MEDIUM);
+
+    res.json({ success: true, data: responseData });
   } catch (error) {
     logger.error(`ADMIN-ROUTE - GET /admin/users/:id - Error: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -417,9 +472,17 @@ router.get("/boxes", async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
-    const status = req.query.status as string; // 'active', 'expired', 'all'
+    const status = (req.query.status as string) || 'all';
 
     logger.info(`ADMIN-ROUTE - GET /admin/boxes - Admin: ${user.email}`);
+
+    // Check cache first
+    const cacheKey = getAdminBoxesCacheKey(page, limit, status);
+    const cached = await getFromCache<{ data: any[]; pagination: any }>(cacheKey);
+    if (cached) {
+      logger.debug(`ADMIN-ROUTE - Cache HIT for boxes list page:${page}`);
+      return res.json({ success: true, ...cached });
+    }
 
     let query: any = {};
     const now = new Date();
@@ -457,8 +520,7 @@ router.get("/boxes", async (req: Request, res: Response) => {
       })
     );
 
-    res.json({
-      success: true,
+    const responseData = {
       data: boxesWithStats,
       pagination: {
         page,
@@ -466,7 +528,12 @@ router.get("/boxes", async (req: Request, res: Response) => {
         total,
         totalPages: Math.ceil(total / limit),
       },
-    });
+    };
+
+    // Cache the response (SHORT TTL since box status changes frequently)
+    await setInCache(cacheKey, responseData, CACHE_TTL.SHORT);
+
+    res.json({ success: true, ...responseData });
   } catch (error) {
     logger.error(`ADMIN-ROUTE - GET /admin/boxes - Error: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -488,12 +555,23 @@ router.get("/history", async (req: Request, res: Response) => {
 
     logger.info(`ADMIN-ROUTE - GET /admin/history - Admin: ${user.email}`);
 
+    // Check cache first
+    const cacheKey = getAdminHistoryCacheKey(page, limit, userId, boxAddress);
+    const cached = await getFromCache<any>(cacheKey);
+    if (cached) {
+      logger.debug(`ADMIN-ROUTE - Cache HIT for history list page:${page}`);
+      return res.json({ success: true, ...cached });
+    }
+
     const result = await getEmailHistoryForAdmin({
       page,
       limit,
       userId,
       boxAddress,
     });
+
+    // Cache the response
+    await setInCache(cacheKey, result, CACHE_TTL.MEDIUM);
 
     res.json({
       success: true,
@@ -517,11 +595,22 @@ router.get("/history/:id", async (req: Request, res: Response) => {
 
     logger.info(`ADMIN-ROUTE - GET /admin/history/${historyId} - Admin: ${user.email}`);
 
+    // Check cache first
+    const cacheKey = getAdminHistoryDetailsCacheKey(historyId);
+    const cached = await getFromCache<any>(cacheKey);
+    if (cached) {
+      logger.debug(`ADMIN-ROUTE - Cache HIT for history details:${historyId}`);
+      return res.json({ success: true, data: cached });
+    }
+
     const history = await getEmailHistoryById(historyId);
 
     if (!history) {
       return res.status(404).json({ success: false, message: "Histórico não encontrado" });
     }
+
+    // Cache the response (LONG TTL since history is immutable)
+    await setInCache(cacheKey, history, CACHE_TTL.LONG);
 
     res.json({
       success: true,
@@ -553,6 +642,9 @@ router.post("/archive-expired", async (req: Request, res: Response) => {
     logger.info(`ADMIN-ROUTE - POST /admin/archive-expired - System: ${user.email}`);
 
     const stats = await processExpiredBoxes();
+
+    // Invalidate admin cache after archiving
+    await invalidateAdminStatsCache();
 
     res.json({
       success: true,
@@ -586,6 +678,9 @@ router.post("/archive-box/:id", async (req: Request, res: Response) => {
         message: "Caixa não encontrada ou sem emails para arquivar"
       });
     }
+
+    // Invalidate admin cache after archiving
+    await invalidateAdminStatsCache();
 
     res.json({
       success: true,
