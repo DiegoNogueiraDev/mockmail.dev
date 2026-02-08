@@ -63,25 +63,31 @@ export const listBoxes = async (req: Request, res: Response) => {
       // Recalcular timeLeft para dados cacheados (tempo é dinâmico)
       const now = new Date();
       cached.data = cached.data.map((box: any) => {
-        if (!box.expiresAt) {
-          // Caixas legado sem expiração
+        if (box.expiresAt) {
+          // Caixa com expiração definida
+          const expiresAt = new Date(box.expiresAt);
+          const timeLeftMs = expiresAt.getTime() - now.getTime();
+          const expired = timeLeftMs <= 0;
+          const timeLeftSeconds = expired ? 0 : Math.floor(timeLeftMs / 1000);
           return {
             ...box,
-            expired: false,
-            timeLeftSeconds: null,
-            timeLeftFormatted: null,
+            expired,
+            timeLeftSeconds,
+            timeLeftFormatted: expired ? "Expirada" : formatTimeLeft(timeLeftSeconds),
+          };
+        } else {
+          // Caixa legado (sem expiresAt) - considerar expirada se criada há mais de 24h
+          const createdAt = new Date(box.createdAt);
+          const ageMs = now.getTime() - createdAt.getTime();
+          const maxAgeMs = 24 * 60 * 60 * 1000; // 24 horas
+          const expired = ageMs > maxAgeMs;
+          return {
+            ...box,
+            expired,
+            timeLeftSeconds: expired ? 0 : null,
+            timeLeftFormatted: expired ? "Expirada (legado)" : null,
           };
         }
-        const expiresAt = new Date(box.expiresAt);
-        const timeLeftMs = expiresAt.getTime() - now.getTime();
-        const expired = timeLeftMs <= 0;
-        const timeLeftSeconds = expired ? 0 : Math.floor(timeLeftMs / 1000);
-        return {
-          ...box,
-          expired,
-          timeLeftSeconds,
-          timeLeftFormatted: expired ? "Expirada" : formatTimeLeft(timeLeftSeconds),
-        };
       });
       logger.info(`CONTROL-EMAILBOX - Cache HIT for user ${userId} boxes (page ${page})`);
       return res.status(200).json({ success: true, ...cached });
@@ -111,11 +117,22 @@ export const listBoxes = async (req: Request, res: Response) => {
         let expired = false;
 
         if (box.expiresAt) {
+          // Caixa com expiração definida
           const expiresAt = new Date(box.expiresAt);
           const timeLeftMs = expiresAt.getTime() - now.getTime();
           expired = timeLeftMs <= 0;
           timeLeftSeconds = expired ? 0 : Math.floor(timeLeftMs / 1000);
           timeLeftFormatted = expired ? "Expirada" : formatTimeLeft(timeLeftSeconds);
+        } else {
+          // Caixa legada (sem expiresAt) - considerar expirada se criada há mais de 24h
+          const createdAt = new Date(box.createdAt);
+          const ageMs = now.getTime() - createdAt.getTime();
+          const maxAgeMs = 24 * 60 * 60 * 1000; // 24 horas
+          expired = ageMs > maxAgeMs;
+          if (expired) {
+            timeLeftSeconds = 0;
+            timeLeftFormatted = "Expirada (legado)";
+          }
         }
 
         return {
