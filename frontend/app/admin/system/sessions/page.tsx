@@ -47,20 +47,6 @@ interface Session {
   expiresAt: string;
 }
 
-interface SessionsResponse {
-  success: boolean;
-  data: Session[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-  stats: {
-    activeSessions: number;
-  };
-}
-
 type StatusFilter = 'all' | 'active' | 'logged_out' | 'expired' | 'revoked';
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -92,11 +78,16 @@ export default function AdminSessionsPage() {
         params.append('status', statusFilter);
       }
 
-      const response = await api.get<SessionsResponse>(`/api/admin/sessions?${params.toString()}`);
+      const response = await api.get(`/api/admin/sessions?${params.toString()}`) as unknown as {
+        success: boolean;
+        data: Session[];
+        pagination: { page: number; limit: number; total: number; totalPages: number; };
+        stats: { activeSessions: number; };
+      };
       if (response.success && response.data) {
-        setSessions(response.data.data);
-        setPagination(response.data.pagination);
-        setActiveSessions(response.data.stats.activeSessions);
+        setSessions(response.data);
+        setPagination(response.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 });
+        setActiveSessions(response.stats?.activeSessions || 0);
         setError(null);
       } else {
         setError('Erro ao carregar sessões');
