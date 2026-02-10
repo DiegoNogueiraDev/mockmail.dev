@@ -144,6 +144,69 @@ export const processExpiredBoxes = async (): Promise<{
 };
 
 /**
+ * Remove emails órfãos cujas EmailBoxes foram deletadas (ex: TTL auto-delete)
+ * 
+ * Quando o MongoDB TTL index deleta EmailBoxes expiradas, os emails associados
+ * permanecem na coleção Email sem referência válida. Esta função identifica
+ * e remove esses emails órfãos.
+ */
+const cleanupOrphanedEmails = async (): Promise<{
+  orphanedCount: number;
+  deletedCount: number;
+}> => {
+  try {
+    // Buscar todos os emailBox IDs distintos referenciados por emails
+    const referencedBoxIds = await Email.distinct("emailBox");
+
+    if (referencedBoxIds.length === 0) {
+      logger.info("SERVICE-HISTORY - Nenhum email encontrado para verificar órfãos");
+      return { orphanedCount: 0, deletedCount: 0 };
+    }
+
+    // Verificar quais desses IDs ainda existem na coleção EmailBox
+    const existingBoxIds = await EmailBox.find(
+      { _id: { $in: referencedBoxIds } },
+      { _id: 1 }
+    ).lean();
+
+    const existingIdSet = new Set(existingBoxIds.map((b: any) => b._id.toString()));
+
+    // Filtrar IDs que não existem mais
+    const orphanedBoxIds = referencedBoxIds.filter(
+      (id: any) => !existingIdSet.has(id.toString())
+    );
+
+    if (orphanedBoxIds.length === 0) {
+      logger.info("SERVICE-HISTORY - Nenhum email órfão encontrado");
+      return { orphanedCount: 0, deletedCount: 0 };
+    }
+
+    // Contar antes de deletar (para log)
+    const orphanedCount = await Email.countDocuments({
+      emailBox: { $in: orphanedBoxIds }
+    });
+
+    // Deletar emails órfãos
+    const result = await Email.deleteMany({
+      emailBox: { $in: orphanedBoxIds }
+    });
+
+    logger.info(
+      `SERVICE-HISTORY - Cleanup: ${result.deletedCount} emails órfãos removidos ` +
+      `de ${orphanedBoxIds.length} caixas inexistentes`
+    );
+
+    return {
+      orphanedCount,
+      deletedCount: result.deletedCount,
+    };
+  } catch (error) {
+    logger.error(`SERVICE-HISTORY - Erro no cleanup de órfãos: ${(error as Error).message}`);
+    throw error;
+  }
+};
+
+/**
  * Busca histórico de emails para admin
  */
 export const getEmailHistoryForAdmin = async (options: {
@@ -335,6 +398,7 @@ export default {
   archiveExpiredBoxEmails,
   archiveBoxOnDeletion,
   processExpiredBoxes,
+  cleanupOrphanedEmails,
   getEmailHistoryForAdmin,
   getEmailHistoryById,
   getHistoryStats,

@@ -14,6 +14,7 @@ import {
   processExpiredBoxes,
   archiveExpiredBoxEmails,
 } from "../services/emailHistory.service";
+import emailHistoryService from "../services/emailHistory.service";
 import {
   getFromCache,
   setInCache,
@@ -32,7 +33,7 @@ const router = Router();
 
 // Middleware para verificar se é admin
 const requireAdmin = async (req: Request, res: Response, next: Function) => {
-  const user = (req as any).user;
+  const user = req.user!;
 
   if (!user) {
     return res.status(401).json({ success: false, message: "Not authenticated" });
@@ -58,7 +59,7 @@ router.use(requireAdmin);
  */
 router.get("/stats", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     logger.info(`ADMIN-ROUTE - GET /admin/stats - Admin: ${user.email}`);
 
     // Check cache first
@@ -130,7 +131,7 @@ router.get("/stats", async (req: Request, res: Response) => {
  */
 router.get("/charts", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     const period = (req.query.period as string) || 'week';
 
     logger.info(`ADMIN-ROUTE - GET /admin/charts?period=${period} - Admin: ${user.email}`);
@@ -281,7 +282,7 @@ router.get("/charts", async (req: Request, res: Response) => {
  */
 router.get("/users", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);
     const skip = (page - 1) * limit;
@@ -381,7 +382,7 @@ router.get("/users", async (req: Request, res: Response) => {
  */
 router.get("/users/:id", async (req: Request, res: Response) => {
   try {
-    const adminUser = (req as any).user;
+    const adminUser = req.user!;
     const userId = req.params.id;
 
     logger.info(`ADMIN-ROUTE - GET /admin/users/${userId} - Admin: ${adminUser.email}`);
@@ -465,7 +466,7 @@ router.get("/users/:id", async (req: Request, res: Response) => {
  */
 router.get("/boxes", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);
     const skip = (page - 1) * limit;
@@ -544,7 +545,7 @@ router.get("/boxes", async (req: Request, res: Response) => {
  */
 router.get("/history", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);
     const userId = req.query.userId as string;
@@ -587,7 +588,7 @@ router.get("/history", async (req: Request, res: Response) => {
  */
 router.get("/history/:id", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     const historyId = req.params.id;
 
     logger.info(`ADMIN-ROUTE - GET /admin/history/${historyId} - Admin: ${user.email}`);
@@ -626,7 +627,7 @@ router.get("/history/:id", async (req: Request, res: Response) => {
  */
 router.post("/archive-expired", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
 
     // Apenas system pode executar
     if (user.role !== 'system') {
@@ -661,7 +662,7 @@ router.post("/archive-expired", async (req: Request, res: Response) => {
  */
 router.post("/archive-box/:id", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     const boxId = req.params.id;
     const reason = req.body.reason || 'manual';
 
@@ -828,7 +829,7 @@ router.get("/sessions/active", async (req: Request, res: Response) => {
 router.post("/sessions/:id/revoke", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const adminUser = (req as any).user;
+    const adminUser = req.user!;
 
     const session = await UserSession.findByIdAndUpdate(
       id,

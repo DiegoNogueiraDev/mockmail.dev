@@ -43,7 +43,7 @@ function formatTimeLeft(seconds: number): string {
  */
 export const listBoxes = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
 
     if (!userId) {
@@ -108,10 +108,17 @@ export const listBoxes = async (req: Request, res: Response) => {
 
     const now = new Date();
 
-    // Get email count for each box and calculate time left
-    const boxesWithDetails = await Promise.all(
-      boxes.map(async (box: any) => {
-        const emailCount = await Email.countDocuments({ to: box.address });
+    // Get email counts for all boxes in a single aggregation (avoids N+1)
+    const boxAddresses = boxes.map((box: any) => box.address);
+    const emailCounts = await Email.aggregate([
+      { $match: { to: { $in: boxAddresses } } },
+      { $group: { _id: "$to", count: { $sum: 1 } } },
+    ]);
+    const countMap = new Map(emailCounts.map((c: any) => [c._id, c.count]));
+
+    // Build details for each box
+    const boxesWithDetails = boxes.map((box: any) => {
+        const emailCount = countMap.get(box.address) || 0;
 
         // Calcular tempo restante e status de expiração
         let timeLeftSeconds = null;
@@ -148,8 +155,7 @@ export const listBoxes = async (req: Request, res: Response) => {
           timeLeftSeconds,
           timeLeftFormatted,
         };
-      })
-    );
+    });
 
     // Ordenar: caixas ativas primeiro (não expiradas), depois expiradas
     // Dentro de cada grupo, ordenar por data de criação (mais recentes primeiro)
@@ -200,7 +206,7 @@ export const listBoxes = async (req: Request, res: Response) => {
  */
 export const getBox = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
     const { id } = req.params;
 
@@ -247,7 +253,7 @@ export const getBox = async (req: Request, res: Response) => {
  */
 export const createBox = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
 
     if (!userId) {
@@ -344,7 +350,7 @@ export const createBox = async (req: Request, res: Response) => {
  */
 export const deleteBox = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
     const { id } = req.params;
 
@@ -406,7 +412,7 @@ export const deleteBox = async (req: Request, res: Response) => {
  */
 export const clearBox = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
     const { id } = req.params;
 
@@ -446,7 +452,7 @@ export const clearBox = async (req: Request, res: Response) => {
  */
 export const getBoxEmails = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
     const { id } = req.params;
 

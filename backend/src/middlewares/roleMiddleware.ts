@@ -7,7 +7,7 @@ import logger from '../utils/logger';
  */
 export const requireRole = (...roles: UserRole[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    const user = (req as any).user;
+    const user = req.user;
 
     if (!user) {
       logger.warn('ROLE-MIDDLEWARE - Tentativa de acesso sem usuário autenticado');
@@ -28,7 +28,7 @@ export const requireRole = (...roles: UserRole[]) => {
  */
 export const requirePermission = (permission: Permission) => {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const user = (req as any).user;
+    const user = req.user;
 
     if (!user) {
       logger.warn('PERMISSION-MIDDLEWARE - Tentativa de acesso sem usuário autenticado');

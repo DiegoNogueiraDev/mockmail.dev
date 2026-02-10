@@ -9,6 +9,7 @@ import {
 } from "../controllers/emailBox.controller";
 import { authMiddleware } from "../middlewares/authMiddleware";
 import { validateRequest } from "../middlewares/validateRequest";
+import { emailBoxCreationLimiter } from "../middlewares/rateLimiter";
 import Joi from "joi";
 import logger from "../utils/logger";
 
@@ -57,6 +58,7 @@ const createBoxSchema = Joi.object({
 
 router.post(
   "/",
+  emailBoxCreationLimiter,
   validateRequest(createBoxSchema),
   async (req, res, next) => {
     try {

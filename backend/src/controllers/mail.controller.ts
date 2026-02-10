@@ -274,7 +274,7 @@ export const getLatestEmailBySubject = async (req: Request, res: Response) => {
  */
 export const listEmails = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
 
     if (!userId) {
@@ -357,7 +357,7 @@ export const listEmails = async (req: Request, res: Response) => {
  */
 export const getEmailById = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
     const { id } = req.params;
 
@@ -405,7 +405,7 @@ export const getEmailById = async (req: Request, res: Response) => {
  */
 export const deleteEmail = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
     const { id } = req.params;
 

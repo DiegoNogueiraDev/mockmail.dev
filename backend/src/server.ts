@@ -5,8 +5,9 @@ import helmet from "helmet";
 import mongoSanitize from "express-mongo-sanitize";
 import hpp from "hpp";
 import cookieParser from "cookie-parser";
+import mongoose from "mongoose";
 import { connectToMongoDB } from "./config/mongodb";
-import { connectToRedis } from "./config/redis";
+import { connectToRedis, disconnectRedis } from "./config/redis";
 import { errorHandler } from "./middlewares/errorHandler";
 import cors from "cors";
 import router from "./routes/router";
@@ -138,6 +139,9 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
 
+// Referência do servidor HTTP para graceful shutdown
+let httpServer: ReturnType<typeof app.listen> | null = null;
+
 // Inicializar conexões
 async function startServer() {
   try {
@@ -168,7 +172,7 @@ async function startServer() {
       logger.warn("⚠ Token blacklist desabilitada");
     }
 
-    app.listen(PORT, () => {
+    httpServer = app.listen(PORT, () => {
       logger.info("=".repeat(60));
       logger.info(`✓ Servidor rodando na porta ${PORT}`);
       logger.info(`✓ Ambiente: ${process.env.NODE_ENV || 'development'}`);
@@ -181,9 +185,46 @@ async function startServer() {
   }
 }
 
-startServer();
+// Graceful shutdown
+async function gracefulShutdown(signal: string) {
+  logger.info(`${signal} recebido, iniciando shutdown graceful...`);
 
-process.on('unhandledRejection', (reason, promise) => {
+  // Parar de aceitar novas conexões
+  if (httpServer) {
+    httpServer.close(() => {
+      logger.info("SHUTDOWN - Servidor HTTP fechado");
+    });
+  }
+
+  try {
+    await mongoose.connection.close();
+    logger.info("SHUTDOWN - MongoDB desconectado");
+  } catch (err) {
+    logger.error(`SHUTDOWN - Erro ao fechar MongoDB: ${(err as Error).message}`);
+  }
+
+  try {
+    await disconnectRedis();
+    logger.info("SHUTDOWN - Redis desconectado");
+  } catch (err) {
+    logger.error(`SHUTDOWN - Erro ao fechar Redis: ${(err as Error).message}`);
+  }
+
+  process.exit(0);
+}
+
+// Forçar encerramento após 10s caso o graceful falhe
+function forceShutdown(signal: string) {
+  setTimeout(() => {
+    logger.error(`SHUTDOWN - Forçando encerramento após timeout (${signal})`);
+    process.exit(1);
+  }, 10000).unref();
+}
+
+process.on('SIGTERM', () => { forceShutdown('SIGTERM'); gracefulShutdown('SIGTERM'); });
+process.on('SIGINT', () => { forceShutdown('SIGINT'); gracefulShutdown('SIGINT'); });
+
+process.on('unhandledRejection', (reason) => {
   logger.error('Unhandled Rejection:', reason);
 });
 
@@ -191,5 +232,7 @@ process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
   process.exit(1);
 });
+
+startServer();
 
 export default app;

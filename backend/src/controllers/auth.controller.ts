@@ -23,10 +23,16 @@ const REFRESH_TOKEN_COOKIE = 'mockmail_refresh_token';
 const ACCESS_TOKEN_MAX_AGE = 15 * 60 * 1000; // 15 minutes
 const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-// Função auxiliar para sanitizar entrada
+// Sanitizar campos de texto (nome, etc.) - remove chars perigosos para HTML/SQL
 const sanitizeInput = (input: string): string => {
   if (typeof input !== 'string') return '';
   return input.trim().replace(/[<>\"'%;&()]/g, '');
+};
+
+// Sanitizar email - apenas trim e lowercase (não remover chars válidos como +, ')
+const sanitizeEmail = (input: string): string => {
+  if (typeof input !== 'string') return '';
+  return input.trim().toLowerCase();
 };
 
 // Função auxiliar para validar email
@@ -88,7 +94,7 @@ export const login = async (req: Request, res: Response) => {
     return res.status(400).json({ error: "O formato do email é inválido." });
   }
 
-  const sanitizedEmail = sanitizeInput(email);
+  const sanitizedEmail = sanitizeEmail(email);
   logger.info(`CONTROL-AUTH - Tentativa de login com o email: ${sanitizedEmail}`);
 
   try {
@@ -188,7 +194,7 @@ export const register = async (req: Request, res: Response) => {
     });
   }
 
-  const sanitizedEmail = sanitizeInput(email);
+  const sanitizedEmail = sanitizeEmail(email);
   const sanitizedName = sanitizeInput(name);
 
   logger.info(`CONTROL-AUTH - Tentativa de registro com o email: ${sanitizedEmail}`);
@@ -343,7 +349,7 @@ export const logout = async (req: Request, res: Response) => {
     const refreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE];
 
     // Try to get user ID to end session
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
 
     // End user session

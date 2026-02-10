@@ -14,7 +14,7 @@ const router = Router();
  *  @access Private
  */
 router.get("/verify", authMiddleware, (req, res) => {
-  const user = (req as any).user;
+  const user = req.user;
   logger.info(`ROUTE-AUTH - GET /auth/verify - Token válido para: ${user?.email}`);
   res.json({
     valid: true,
@@ -134,7 +134,7 @@ router.post("/logout", async (req, res, next) => {
  */
 router.post("/logout-all", authMiddleware, async (req, res) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id || user?.id;
 
     if (userId) {

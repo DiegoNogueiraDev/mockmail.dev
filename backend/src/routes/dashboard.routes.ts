@@ -26,7 +26,7 @@ router.use(authMiddleware);
  */
 router.get("/stats", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id?.toString() || user?.id;
 
     logger.info(`ROUTE-DASHBOARD - GET /dashboard/stats - User: ${user?.email}`);
@@ -111,7 +111,7 @@ router.get("/stats", async (req: Request, res: Response) => {
  */
 router.get("/recent-emails", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id?.toString() || user?.id;
     const limit = parseInt(req.query.limit as string) || 5;
 
@@ -161,7 +161,7 @@ router.get("/recent-emails", async (req: Request, res: Response) => {
  */
 router.get("/usage", async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?._id?.toString() || user?.id;
 
     logger.info(`ROUTE-DASHBOARD - GET /dashboard/usage - User: ${user?.email}`);
