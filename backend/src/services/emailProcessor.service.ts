@@ -8,6 +8,7 @@ import { extractEmail, extractTokenSubject } from "../utils/emailParser";
 import { parseBody } from "../utils/bodyParser";
 import User from "../models/User";
 import { incrementUserDailyUsage } from "../middlewares/dailyUserLimit";
+import EmailBox from "../models/EmailBox";
 
 // Configurações via variáveis de ambiente
 const FIFO_PATH = process.env.MOCKMAIL_FIFO_PATH || "/var/spool/email-processor";
@@ -79,6 +80,25 @@ async function saveToJsonFile(emailData: ParsedEmailData): Promise<void> {
 }
 
 /**
+ * Reativa uma caixa expirada estendendo a expiração por 24 horas.
+ */
+async function reactivateIfExpired(emailBox: any): Promise<void> {
+  const now = new Date();
+  const isExpired = emailBox.expiresAt && new Date(emailBox.expiresAt) <= now;
+
+  if (isExpired || !emailBox.expiresAt) {
+    const newExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await EmailBox.updateOne(
+      { _id: emailBox._id },
+      { $set: { expiresAt: newExpiresAt } }
+    );
+    logger.info(
+      `EMAIL-PROCESSOR - Caixa reativada: ${emailBox.address} - Nova expiração: ${newExpiresAt.toISOString()}`
+    );
+  }
+}
+
+/**
  * Processa o email e persiste no MongoDB
  * Busca o EmailBox pelo endereço de destino para encontrar o usuário
  */
@@ -112,6 +132,9 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
         return;
       }
       
+      // Reativar caixa se estiver expirada (novo email = caixa deve ficar ativa)
+      await reactivateIfExpired(emailBox);
+
       logger.info(`EMAIL-PROCESSOR - Caixa ${to} encontrada. Destinando email para ela (FROM: ${from})`);
     } else {
       // PRIORIDADE 2: Caixa TO não existe - tentar criar baseado no remetente (FROM)
@@ -164,7 +187,7 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
       emailBox: emailBox._id,
     });
 
-    logger.info(`EMAIL-PROCESSOR - Email persistido: ${savedEmail.id} para ${to}`);
+    logger.info(`EMAIL-PROCESSOR - Email persistido: ${savedEmail._id} para ${to}`);
 
     // Incrementar contador de uso diário do usuário (conta como 1 interação)
     try {
@@ -268,7 +291,7 @@ async function readFromFifoContinuous(): Promise<void> {
   });
   stream.on("error", (error) => {
     logger.error(`EMAIL-PROCESSOR - Erro no stream do FIFO: ${error.message}`);
-    // Reab re após erro
+    // Reabrir após erro
     setTimeout(() => readFromFifoContinuous(), 2000);
   });
 

@@ -3,9 +3,10 @@ import logger from "../utils/logger";
 
 /**
  * Salva um e-mail associado a uma caixa de e-mail.
+ * Verifica duplicatas pelo messageId (Message-ID do email).
  *
  * @param data - Dados do e-mail a serem salvos.
- * @returns O e-mail salvo.
+ * @returns O e-mail salvo ou o existente (se duplicado).
  */
 export const saveEmail = async (data: any) => {
   try {
@@ -18,18 +19,43 @@ export const saveEmail = async (data: any) => {
       ? "text/html"
       : "text/plain";
 
+    // Mapeia data.id (Message-ID) para messageId
+    const messageId = data.id || data.messageId || null;
+
+    // Deduplicação: verificar se email com mesmo messageId já existe
+    if (messageId) {
+      const existing = await Email.findOne({ messageId });
+      if (existing) {
+        logger.warn(
+          `SERVICE-EMAIL - Email duplicado detectado (messageId: ${messageId}), ignorando`
+        );
+        return existing;
+      }
+    }
+
     const emailData = {
       ...data,
-      contentType, // Adiciona o contentType determinado automaticamente
+      contentType,
+      messageId,
     };
+    // Remove o campo 'id' para não conflitar com o virtual do Mongoose
+    delete emailData.id;
 
     const email = new Email(emailData);
     const savedEmail = await email.save();
     logger.info(
-      `SERVICE-EMAIL - E-mail salvo com sucesso: ID ${savedEmail.id}`
+      `SERVICE-EMAIL - E-mail salvo com sucesso: ID ${savedEmail._id} (messageId: ${messageId})`
     );
     return savedEmail;
-  } catch (error) {
+  } catch (error: any) {
+    // Se for erro de duplicata do índice único, retorna o existente
+    if (error.code === 11000 && error.keyPattern?.messageId) {
+      logger.warn(
+        `SERVICE-EMAIL - Duplicata capturada pelo índice único (messageId), ignorando`
+      );
+      const existing = await Email.findOne({ messageId: data.id || data.messageId });
+      if (existing) return existing;
+    }
     logger.error(
       `SERVICE-EMAIL - Erro ao salvar e-mail: ${(error as Error).message}`
     );
