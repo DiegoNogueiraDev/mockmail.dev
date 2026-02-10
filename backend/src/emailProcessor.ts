@@ -28,11 +28,6 @@ dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 
 // Configurações via variáveis de ambiente
 const FIFO_PATH = process.env.MOCKMAIL_FIFO_PATH || "/var/spool/email-processor";
-const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN;
-if (!INTERNAL_TOKEN) {
-  log.error("FATAL: INTERNAL_API_TOKEN não configurado. Defina INTERNAL_API_TOKEN no .env");
-  process.exit(1);
-}
 const DEBUG_MODE = process.env.MOCKMAIL_DEBUG === "true";
 const LOG_DIR = "/var/log/mockmail";
 
@@ -68,6 +63,13 @@ const log = {
   error: (msg: string) => console.error(`[${new Date().toISOString()}] [ERROR] EMAIL-PROCESSOR - ${msg}`),
   debug: (msg: string) => DEBUG_MODE && console.log(`[${new Date().toISOString()}] [DEBUG] EMAIL-PROCESSOR - ${msg}`),
 };
+
+// Validar token interno (após log estar disponível)
+const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN;
+if (!INTERNAL_TOKEN) {
+  log.error("FATAL: INTERNAL_API_TOKEN não configurado. Defina INTERNAL_API_TOKEN no .env");
+  process.exit(1);
+}
 
 /**
  * Extrai o endereço de email do campo TO do email raw
@@ -306,7 +308,7 @@ async function main(): Promise<void> {
     console.log(`  ${status} ${env.name}: porta ${env.apiPort}, domínios: ${env.domains.join(", ")}`);
   });
   console.log("");
-  console.log(`Token interno: ${INTERNAL_TOKEN.substring(0, 15)}...`);
+  console.log(`Token interno: ${INTERNAL_TOKEN!.substring(0, 15)}...`);
   console.log("═".repeat(60));
 
   // Verifica se pelo menos um ambiente está habilitado

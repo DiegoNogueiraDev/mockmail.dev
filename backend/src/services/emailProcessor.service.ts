@@ -84,14 +84,23 @@ async function saveToJsonFile(emailData: ParsedEmailData): Promise<void> {
  */
 async function reactivateIfExpired(emailBox: any): Promise<void> {
   const now = new Date();
-  const isExpired = emailBox.expiresAt && new Date(emailBox.expiresAt) <= now;
+  const newExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-  if (isExpired || !emailBox.expiresAt) {
-    const newExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await EmailBox.updateOne(
-      { _id: emailBox._id },
-      { $set: { expiresAt: newExpiresAt } }
-    );
+  // Operação atômica: só atualiza se expirado ou sem expiresAt
+  const result = await EmailBox.findOneAndUpdate(
+    {
+      _id: emailBox._id,
+      $or: [
+        { expiresAt: { $exists: false } },
+        { expiresAt: null },
+        { expiresAt: { $lte: now } },
+      ],
+    },
+    { $set: { expiresAt: newExpiresAt } },
+    { new: true }
+  );
+
+  if (result) {
     logger.info(
       `EMAIL-PROCESSOR - Caixa reativada: ${emailBox.address} - Nova expiração: ${newExpiresAt.toISOString()}`
     );

@@ -282,8 +282,8 @@ router.get("/charts", async (req: Request, res: Response) => {
 router.get("/users", async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);
     const skip = (page - 1) * limit;
     const search = (req.query.search as string)?.trim() || '';
 
@@ -292,11 +292,13 @@ router.get("/users", async (req: Request, res: Response) => {
     // Build search query
     let query: Record<string, unknown> = {};
     if (search) {
+      // Escape regex metacharacters to prevent ReDoS
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       // Search by email or name (case-insensitive)
       query = {
         $or: [
-          { email: { $regex: search, $options: 'i' } },
-          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: escapedSearch, $options: 'i' } },
+          { name: { $regex: escapedSearch, $options: 'i' } },
         ],
       };
     }
@@ -464,8 +466,8 @@ router.get("/users/:id", async (req: Request, res: Response) => {
 router.get("/boxes", async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);
     const skip = (page - 1) * limit;
     const status = (req.query.status as string) || 'all';
 
@@ -543,8 +545,8 @@ router.get("/boxes", async (req: Request, res: Response) => {
 router.get("/history", async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);
     const userId = req.query.userId as string;
     const boxAddress = req.query.boxAddress as string;
 

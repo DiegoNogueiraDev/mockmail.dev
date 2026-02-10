@@ -61,7 +61,7 @@ export default function EmailDetailPage() {
     if (!email?.body?.rawHtml) return '';
     return DOMPurify.sanitize(email.body.rawHtml, {
       ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','hr','ul','ol','li','a','b','strong','i','em','u','s','sub','sup','blockquote','pre','code','table','thead','tbody','tr','th','td','img','div','span','font','center'],
-      ALLOWED_ATTR: ['href','src','alt','title','width','height','style','align','valign','bgcolor','color','border','cellpadding','cellspacing','class','target'],
+      ALLOWED_ATTR: ['href','src','alt','title','width','height','align','valign','bgcolor','color','border','cellpadding','cellspacing','class','target'],
       ALLOW_DATA_ATTR: false,
       ADD_ATTR: ['target'],
       FORBID_TAGS: ['script','iframe','object','embed','form','input','textarea','select','button'],
