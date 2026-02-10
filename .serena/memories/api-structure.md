@@ -1,4 +1,6 @@
-# API Backend - Estrutura (backend/src/)
+# API Backend - Estrutura (atualizado 2026-02-10)
+
+## Diretório: backend/src/
 
 ## Controllers
 - auth.controller.ts - Login, register, logout
@@ -34,12 +36,34 @@
 - profile.routes.ts, admin.routes.ts, internal.routes.ts
 
 ## Middlewares
-- authMiddleware.ts (JWT), rateLimiter.ts, errorHandler.ts
-- csrfMiddleware.ts, roleMiddleware.ts, dailyUserLimit.ts
-- validateRequest.ts, validateEmailRequest.ts, healthCheck.ts
+- authMiddleware.ts (JWT + API Key auth)
+- rateLimiter.ts (rate limiting por IP/user)
+- dailyUserLimit.ts (500 req/dia por usuário)
+- csrfMiddleware.ts (proteção CSRF)
+- errorHandler.ts (handler global de erros)
+- roleMiddleware.ts (controle de roles)
+- validateRequest.ts, validateEmailRequest.ts
+- healthCheck.ts
+
+## Validations
+- email.validation.ts (schemas Joi)
+
+## Tasks
+- cleanupTask.ts (limpeza automática)
+
+## Seeds
+- seed-homologacao.ts (dados de seed para HML)
+
+## Types
+- emailTracking.ts (tipos de rastreamento)
+- express.d.ts (extensões do Express types)
 
 ## Config
 - env.ts, mongodb.ts, redis.ts
 
 ## Utils
-- logger.ts (Winston), emailParser.ts, sanitize.ts, bodyParser.ts, validateEnv.ts
+- logger.ts (Winston)
+- emailParser.ts (parsing de emails raw)
+- sanitize.ts (sanitize-html)
+- bodyParser.ts (configuração body parser)
+- validateEnv.ts (validação de variáveis de ambiente)
