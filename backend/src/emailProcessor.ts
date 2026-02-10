@@ -236,6 +236,14 @@ async function readFromFifoContinuous(): Promise<void> {
   let buffer = "";
   const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB - limite de segurança
 
+  /**
+   * Limpa o stream antes de recriar (previne memory leak de listeners acumulados)
+   */
+  function cleanupStream(): void {
+    stream.removeAllListeners();
+    stream.destroy();
+  }
+
   stream.on("data", async (chunk: Buffer | string) => {
     const data = chunk.toString();
     log.debug(`Recebidos ${data.length} bytes`);
@@ -280,11 +288,13 @@ async function readFromFifoContinuous(): Promise<void> {
       }
     }
     log.warn("Stream encerrado, reabrindo FIFO...");
+    cleanupStream();
     setTimeout(() => readFromFifoContinuous(), 1000);
   });
 
   stream.on("error", (error) => {
     log.error(`Erro no stream FIFO: ${error.message}`);
+    cleanupStream();
     setTimeout(() => readFromFifoContinuous(), 2000);
   });
 
@@ -295,21 +305,19 @@ async function readFromFifoContinuous(): Promise<void> {
  * Main
  */
 async function main(): Promise<void> {
-  console.log("═".repeat(60));
-  console.log("EMAIL-PROCESSOR - MockMail.dev Email Processor/Distributor");
-  console.log("═".repeat(60));
-  console.log(`Modo: DISTRIBUIDOR ÚNICO (lê FIFO e encaminha para APIs)`);
-  console.log(`FIFO: ${FIFO_PATH}`);
-  console.log(`Debug: ${DEBUG_MODE}`);
-  console.log("");
-  console.log("Ambientes configurados:");
+  log.info("═".repeat(60));
+  log.info("MockMail.dev Email Processor/Distributor");
+  log.info("═".repeat(60));
+  log.info(`Modo: DISTRIBUIDOR ÚNICO (lê FIFO e encaminha para APIs)`);
+  log.info(`FIFO: ${FIFO_PATH}`);
+  log.info(`Debug: ${DEBUG_MODE}`);
+  log.info("Ambientes configurados:");
   ENVIRONMENTS.forEach((env) => {
     const status = env.enabled ? "✓ ATIVO" : "✗ INATIVO";
-    console.log(`  ${status} ${env.name}: porta ${env.apiPort}, domínios: ${env.domains.join(", ")}`);
+    log.info(`  ${status} ${env.name}: porta ${env.apiPort}, domínios: ${env.domains.join(", ")}`);
   });
-  console.log("");
-  console.log(`Token interno: ${INTERNAL_TOKEN!.substring(0, 15)}...`);
-  console.log("═".repeat(60));
+  log.info(`Token interno: ${INTERNAL_TOKEN!.substring(0, 15)}...`);
+  log.info("═".repeat(60));
 
   // Verifica se pelo menos um ambiente está habilitado
   const enabledEnvs = ENVIRONMENTS.filter((e) => e.enabled);

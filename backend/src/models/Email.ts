@@ -34,7 +34,7 @@ const EmailSchema: Schema = new Schema(
       },
     },
     date: { type: Date, required: true },
-    token: { type: String, optional: true },
+    token: { type: String },
     messageId: { type: String },
     contentType: { type: String, required: true },
     processedAt: { type: Date, default: Date.now },

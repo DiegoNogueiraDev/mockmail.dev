@@ -202,6 +202,7 @@ export const verifyAccessToken = async (token: string): Promise<TokenPayload | n
     const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
     return decoded;
   } catch (error) {
+    logger.debug(`TOKEN-SERVICE - Falha ao verificar access token: ${(error as Error).message}`);
     return null;
   }
 };

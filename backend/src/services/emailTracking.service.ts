@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import logger from '../utils/logger';
 import { EmailStatus, EmailStep, EmailStepStatus, LogEntry } from '../types/emailTracking';
 
 export class LogParser {
@@ -37,7 +38,7 @@ export class LogParser {
       );
 
     } catch (error) {
-      console.error('Erro ao analisar logs:', error);
+      logger.warn('Erro ao analisar logs:', error);
       throw new Error(`Falha ao processar logs para ${emailAddress}: ${(error as Error).message}`);
     }
   }
@@ -62,7 +63,7 @@ export class LogParser {
 
       return emails;
     } catch (error) {
-      console.error('Erro ao ler emails.json:', error);
+      logger.warn('Erro ao ler emails.json:', error);
       return [];
     }
   }
@@ -81,7 +82,7 @@ export class LogParser {
         .map(line => this.parseLogLine(line))
         .filter(entry => entry !== null);
     } catch (error) {
-      console.error('Erro ao ler logs do processador:', error);
+      logger.warn('Erro ao ler logs do processador:', error);
       return [];
     }
   }
@@ -100,7 +101,7 @@ export class LogParser {
         .map(line => this.parseLogLine(line))
         .filter(entry => entry !== null);
     } catch (error) {
-      console.error('Erro ao ler logs da API:', error);
+      logger.warn('Erro ao ler logs da API:', error);
       return [];
     }
   }

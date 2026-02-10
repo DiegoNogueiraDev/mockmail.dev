@@ -29,9 +29,19 @@ export interface IUser extends Document {
 
 const UserSchema: Schema = new Schema(
   {
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    name: { type: String, required: true },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+      validate: {
+        validator: (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+        message: 'Email inválido',
+      },
+    },
+    password: { type: String, required: true, minlength: 12 },
+    name: { type: String, required: true, trim: true },
     role: {
       type: String,
       enum: ['user', 'admin', 'system'],
@@ -45,7 +55,7 @@ const UserSchema: Schema = new Schema(
     lastLogin: { type: Date }
   },
   { timestamps: true }
-);
+);;
 
 // Método para verificar se usuário tem uma permissão específica
 UserSchema.methods.hasPermission = function(permission: Permission): boolean {
