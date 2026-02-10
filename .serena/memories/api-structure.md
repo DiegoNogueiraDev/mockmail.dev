@@ -1,34 +1,45 @@
-# API Backend - Estrutura
+# API Backend - Estrutura (backend/src/)
 
-## Diretórios
-- `controllers/` - auth.controller.ts, mail.controller.ts, emailBox.controller.ts, webhook.controller.ts, apiKey.controller.ts
-- `services/` - email.service.ts, emailBox.service.ts, user.service.ts, cache.service.ts, token.service.ts
-- `models/` - Email.ts, EmailBox.ts, User.ts, Webhook.ts, ApiKey.ts
-- `middlewares/` - authMiddleware.ts, rateLimiter.ts, errorHandler.ts
-- `routes/` - auth.routes.ts, email.routes.ts, dashboard.routes.ts, webhook.routes.ts, apiKey.routes.ts, router.ts
-- `utils/` - logger.ts, emailParser.ts, sanitize.ts
-- `config/` - redis.ts, mongo.ts, prisma.ts
-- `validations/` - email.validation.ts
+## Controllers
+- auth.controller.ts - Login, register, logout
+- mail.controller.ts - Operações de email
+- emailBox.controller.ts - Gerenciamento de caixas
+- webhook.controller.ts - Webhooks CRUD
+- apiKey.controller.ts - API Keys CRUD
+- profile.controller.ts - Perfil do usuário
 
-## Cache Redis (cache.service.ts)
-O serviço de cache implementa o padrão cache-aside com TTLs estratégicos:
-- **TTL.SHORT** (60s): Dados que mudam frequentemente (lista de emails)
-- **TTL.MEDIUM** (300s): Dados moderados (lista de boxes, webhooks, api-keys)
-- **TTL.STATS** (120s): Estatísticas do dashboard
+## Services
+- email.service.ts - CRUD emails, saveEmail(), busca
+- emailBox.service.ts - CRUD boxes, findEmailBoxByAddress(), reactivateIfExpired()
+- emailProcessor.service.ts - processAndPersistEmail()
+- user.service.ts - Gerenciamento de usuários
+- cache.service.ts - Redis cache-aside (TTLs: SHORT=60s, MEDIUM=300s, STATS=120s)
+- token.service.ts - JWT tokens
+- webhook.service.ts - Disparo de webhooks
+- apiKey.service.ts - API keys
+- emailHistory.service.ts - Histórico
+- emailTracking.service.ts - Rastreamento
 
-### Rotas com Cache
-- `GET /boxes` - Lista de caixas de email do usuário
-- `GET /emails` - Lista de emails do usuário
-- `GET /webhooks` - Lista de webhooks do usuário
-- `GET /api-keys` - Lista de API keys do usuário
+## Models
+- Email.ts (messageId unique sparse, to+date index)
+- EmailBox.ts (expiresAt TTL index)
+- User.ts, UserSession.ts
+- Webhook.ts, WebhookDelivery.ts
+- ApiKey.ts, EmailHistory.ts
 
-### Invalidação Automática
-Cache é invalidado automaticamente em operações de escrita (create, update, delete)
+## Routes
+- router.ts (principal)
+- auth.routes.ts, email.routes.ts, emailBox.routes.ts
+- dashboard.routes.ts, webhook.routes.ts, apiKey.routes.ts
+- profile.routes.ts, admin.routes.ts, internal.routes.ts
 
-## Dependências Principais
-Express, Mongoose, JWT, Bcrypt, Joi, Winston, sanitize-html, Redis
+## Middlewares
+- authMiddleware.ts (JWT), rateLimiter.ts, errorHandler.ts
+- csrfMiddleware.ts, roleMiddleware.ts, dailyUserLimit.ts
+- validateRequest.ts, validateEmailRequest.ts, healthCheck.ts
 
-## Comandos
-- `npm run dev` - Desenvolvimento
-- `npm run build` - Build
-- `npm test` - Testes
+## Config
+- env.ts, mongodb.ts, redis.ts
+
+## Utils
+- logger.ts (Winston), emailParser.ts, sanitize.ts, bodyParser.ts, validateEnv.ts

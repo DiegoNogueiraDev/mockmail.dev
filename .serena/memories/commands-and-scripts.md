@@ -1,54 +1,37 @@
 # Comandos e Scripts
 
-## Ambiente Local (Docker)
+## Dev Local
 ```bash
-# Subir containers
-docker compose up -d
-
-# Importar backup MongoDB
-docker exec mockmail-mongodb mongorestore --username=admin --password=mockmail_dev_2026 --authenticationDatabase=admin --archive=/backup/mongodb-backup-*.gz --gzip
-
-# Iniciar API (dev)
-cd api && npm run dev
-
-# Iniciar Watch (dev)  
-cd watch && npm run dev -- --port 3001
+cd backend && npm run dev    # API (porta 3010)
+cd frontend && npm run dev   # Dashboard (porta 3011)
 ```
 
-## Portas Locais
-- API: http://localhost:3000
-- Watch: http://localhost:3001
-- MongoDB: localhost:27017
-- Redis: localhost:6379
-- PostgreSQL: localhost:5432
+## Portas
+- API: 3000 (prod) / 3010 (dev)
+- Frontend: 3001 (prod) / 3011 (dev)
+- MongoDB: 27017 | Redis: 6379
 
----
-
-## Deploy
+## Docker (Infra)
 ```bash
-./deploy.sh
+./scripts/deploy-docker.sh --env=producao  # MongoDB + Redis
+docker compose up -d                        # Local
+```
+
+## Deploy Produção
+```bash
+./deploy.sh --env=producao                  # App completa via PM2
+cd backend && npm run build                 # Build backend apenas
+pm2 restart mockmail-api mockmail-processor --update-env
 ```
 
 ## PM2
 ```bash
 pm2 start ecosystem.config.js
 pm2 logs mockmail-api
-pm2 restart all
+pm2 logs mockmail-processor
 ```
 
 ## Health Check
 ```bash
-./scripts/health-check.sh
 curl http://localhost:3000/api/health
-```
-
-## Backup
-```bash
-./scripts/backup.sh
-```
-
-## Testes
-```bash
-cd api && npm test
-cd watch && npm run lint
 ```

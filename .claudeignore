@@ -1,10 +1,10 @@
-
-
 # ========================================
-# CLAUDE CODE - OTIMIZAÇÃO MÁXIMA DE TOKENS
+# CLAUDE CODE - CONTEXTO MÍNIMO E ASSERTIVO
 # ========================================
+# Serena MCP tem acesso total independente deste arquivo.
+# Aqui ignoramos tudo que NÃO é código-fonte ativo.
 
-# === DEPENDÊNCIAS (CRÍTICO) ===
+# === DEPENDÊNCIAS ===
 node_modules/
 .pnp/
 .pnp.js
@@ -15,7 +15,7 @@ node_modules/
 .github/
 .gitattributes
 
-# === BUILDS ===
+# === BUILDS & CACHE ===
 .next/
 build/
 dist/
@@ -23,6 +23,8 @@ out/
 .turbo/
 *.tsbuildinfo
 .cache/
+.eslintcache
+.stylelintcache
 
 # === TESTES ===
 coverage/
@@ -31,43 +33,30 @@ playwright-report/
 .nyc_output/
 **/*.spec.ts
 **/*.spec.ts.snap
-**/*test*.txt
-**/*test*.json
 
 # === LOGS ===
 logs/
 *.log
 *-debug.log*
 
-# === PROJETOS SEPARADOS ===
-institutional-website/
-gsm-backup-system/
-
-# === DOCS (TODOS - usar memória Serena) ===
+# === DOCS (acessar via Serena) ===
 docs/
 *.md
 !CLAUDE.md
-!README.md
-
-# === ARQUIVOS GERADOS ===
-*.d.ts.map
-next-env.d.ts
-**/prisma/migrations/*.sql
-**/prisma/generated/
-.prisma/
 
 # === AMBIENTE ===
 .env*
 *.env
-!.env.example
 
-# === UPLOADS/TEMP ===
+# === UPLOADS/TEMP/BACKUPS ===
 **/uploads/
 **/temp/
 **/tmp/
 backups/
+database-backup/
 *.backup
 *.bak
+*.bak2
 
 # === IDE ===
 .vscode/
@@ -82,9 +71,6 @@ Thumbs.db
 .playwright-mcp/
 .claude/settings.local.json.backup
 .claude/plans/
-
-# === SERENA (apenas raiz - ignorar subprojetos) ===
-gsm-2.0/**/.serena/
 .serena/cache/
 
 # === MÍDIA ===
@@ -109,26 +95,24 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
-# === BACKUP CÓDIGO ===
+# === BACKUPS DE CÓDIGO ===
 *.original.backup.js
 *.backup.ts
 *.backup.tsx
+*.ts.bak
+*.tsx.bak
+*.tsx.bak2
 
-# === CACHE ===
-.eslintcache
-.stylelintcache
-
-# === COMPONENTES UI (shadcn) ===
-gsm-2.0/frontend/src/components/ui/
-
-# === TIPOS GERADOS ===
+# === TIPOS/CÓDIGO GERADO ===
+*.d.ts.map
+next-env.d.ts
 **/types/generated/
 **/*.generated.ts
+**/prisma/migrations/
+**/prisma/generated/
+.prisma/
 
-# === PUBLIC/STATIC ===
-gsm-2.0/frontend/public/
-
-# === CONFIGS ESTÁTICAS ===
+# === CONFIGS ESTÁTICAS (raramente editadas, acessar via Serena) ===
 **/tailwind.config.*
 **/postcss.config.*
 **/next.config.*
@@ -137,32 +121,42 @@ gsm-2.0/frontend/public/
 **/.prettier*
 **/jest.config.*
 **/vitest.config.*
-
-# === DOCKER ===
-docker-compose*.yml
-Dockerfile*
-
-# === PRISMA MIGRATIONS ===
-**/prisma/migrations/
-
-# === TESTES PLAYWRIGHT ===
-gsm-2.0/frontend/tests/
 **/playwright.config.*
-
-# === HOOKS GIT ===
-.husky/
-
-# === CONFIGS JSON EXTRAS ===
 **/components.json
 **/vercel.json
 .editorconfig
 .npmrc
 .nvmrc
 
-# === SCRIPTS ===
-*.sh
-!scripts/clean-context.sh
+# === DOCKER (acessar via Serena) ===
+docker-compose*.yml
+Dockerfile*
+.dockerignore
 
-# === ARQUIVOS DE TEXTO ===
+# === HOOKS GIT ===
+.husky/
+
+# === SHELL SCRIPTS (acessar via Serena) ===
+*.sh
+scripts/
+
+# === LEGACY: Processador Python (desativado, ativo é backend/src/emailProcessor.ts) ===
+email-processor/
+
+# === SERVER CONFIG (infra - acessar via Serena) ===
+server-config/
+
+# === FRONTEND ESTÁTICO ===
+frontend/public/
+
+# === SEGURANÇA (configs estáticas) ===
+.gitleaks.toml
+.pre-commit-config.yaml
+.secrets.baseline
+
+# === PROJETOS SEPARADOS ===
+institutional-website/
+gsm-backup-system/
+
+# === ARQUIVOS RAIZ NÃO-ESSENCIAIS ===
 *.txt
-!package.json
