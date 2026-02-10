@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
 export async function GET(request: NextRequest) {
   try {
+    const cookieStore = await cookies();
+    const accessToken = cookieStore.get('mockmail_access_token');
+    if (!accessToken) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     const { searchParams } = new URL(request.url);
     const email = searchParams.get('email');
     const startDate = searchParams.get('startDate');

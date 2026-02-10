@@ -73,7 +73,7 @@ export function middleware(request: NextRequest) {
   }
 
   // 7. Proteger rotas de API que acessam dados do sistema (logs, PM2, métricas)
-  const PROTECTED_API_ROUTES = ['/api/chart-data', '/api/daily-stats', '/api/errors', '/api/metrics'];
+  const PROTECTED_API_ROUTES = ['/api/chart-data', '/api/daily-stats', '/api/errors', '/api/metrics', '/api/email-boxes', '/api/track'];
   if (PROTECTED_API_ROUTES.some(route => pathname === route || pathname.startsWith(route + '/'))) {
     if (!accessToken) {
       return NextResponse.json(

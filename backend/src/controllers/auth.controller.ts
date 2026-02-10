@@ -206,7 +206,10 @@ export const register = async (req: Request, res: Response) => {
     // Criando o usuário
     const user = await createUser(sanitizedEmail, password, sanitizedName);
     logger.info(`CONTROL-AUTH - Usuário registrado com sucesso: ${user.email}`);
-    res.status(201).json(user);
+    res.status(201).json({
+      success: true,
+      user: { id: user.id, email: user.email, name: user.name },
+    });
   } catch (error) {
     logger.error(
       `CONTROL-AUTH - Erro ao registrar usuário com o email: ${sanitizedEmail}`

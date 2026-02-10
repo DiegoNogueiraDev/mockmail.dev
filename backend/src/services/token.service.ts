@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { getRedisClient } from '../config/redis';
 import logger from '../utils/logger';
@@ -6,7 +7,10 @@ const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   throw new Error("FATAL: JWT_SECRET não configurado. Defina JWT_SECRET no .env");
 }
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || JWT_SECRET + '_refresh';
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+if (!JWT_REFRESH_SECRET) {
+  throw new Error("FATAL: JWT_REFRESH_SECRET não configurado. Defina JWT_REFRESH_SECRET no .env");
+}
 
 // Token durations
 const ACCESS_TOKEN_EXPIRY = '15m';  // 15 minutos
@@ -182,8 +186,7 @@ export const revokeAllUserTokens = async (userId: string): Promise<void> => {
  * Gera identificador único para o token (baseado no hash)
  */
 function getTokenIdentifier(token: string): string {
-  // Usa os últimos 32 caracteres do token como identificador
-  return token.slice(-32);
+  return crypto.createHash('sha256').update(token).digest('hex').substring(0, 32);
 }
 
 /**

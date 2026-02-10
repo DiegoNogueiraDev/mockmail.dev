@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { ApiKeyPermission } from "../models/ApiKey";
+import ApiKey, { ApiKeyPermission } from "../models/ApiKey";
 import {
   listUserApiKeys,
   createApiKey,
@@ -85,8 +85,7 @@ export const getApiKey = async (req: Request, res: Response) => {
     const userId = req.user?.id;
     const { id } = req.params;
 
-    const result = await listUserApiKeys(userId!, 1, 1);
-    const apiKey = result.keys.find((k) => String(k._id) === id);
+    const apiKey = await ApiKey.findOne({ _id: id, userId }).select("-keyHash");
 
     if (!apiKey) {
       return res.status(404).json({

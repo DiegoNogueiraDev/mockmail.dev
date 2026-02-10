@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
 const MOCKMAIL_API_BASE_URL = process.env.MOCKMAIL_API_BASE_URL || 'https://api.mockmail.dev';
 
@@ -27,6 +28,11 @@ interface BoxesData {
 
 export async function GET() {
   try {
+    const cookieStore = await cookies();
+    const accessToken = cookieStore.get('mockmail_access_token');
+    if (!accessToken) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
     const response = await fetch(`${MOCKMAIL_API_BASE_URL}/api/mail/boxes-by-user`, {
       method: 'GET',
       headers: {
