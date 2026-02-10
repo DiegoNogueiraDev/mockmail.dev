@@ -16,6 +16,7 @@ import logger from "./utils/logger";
 import { sanitizeMiddleware } from "./utils/sanitize";
 import { generalLimiter } from "./middlewares/rateLimiter";
 import { healthCheck, readinessCheck, livenessCheck } from "./middlewares/healthCheck";
+import EmailBox from "./models/EmailBox";
 
 const app = express();
 
@@ -143,6 +144,20 @@ async function startServer() {
     // Conectar ao MongoDB
     await connectToMongoDB();
     logger.info("✓ MongoDB conectado");
+
+    // Migração: garantir expiresAt em todas as EmailBoxes
+    try {
+      const defaultExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const result = await EmailBox.updateMany(
+        { expiresAt: { $exists: false } },
+        { $set: { expiresAt: defaultExpiry } }
+      );
+      if (result.modifiedCount > 0) {
+        logger.info(`MIGRATION - expiresAt definido para ${result.modifiedCount} caixa(s) legada(s)`);
+      }
+    } catch (migrationErr) {
+      logger.warn(`MIGRATION - Falha ao corrigir expiresAt: ${(migrationErr as Error).message}`);
+    }
 
     // Conectar ao Redis (opcional - para token blacklist)
     try {

@@ -82,6 +82,16 @@ export const findEmailBoxByAddress = async (address: string) => {
     const emailBox = await EmailBox.findOne({ address }).populate("userId");
 
     if (emailBox) {
+      // Corrigir caixas legadas que não possuem expiresAt
+      if (!emailBox.expiresAt) {
+        const newExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        emailBox.expiresAt = newExpiresAt;
+        await EmailBox.updateOne({ _id: emailBox._id }, { $set: { expiresAt: newExpiresAt } });
+        logger.info(
+          `SERVICE-EMAILBOX - expiresAt corrigido para caixa legada: ${address} - Expiração: ${newExpiresAt.toISOString()}`
+        );
+      }
+
       logger.info(
         `SERVICE-EMAILBOX - Caixa de e-mail encontrada: ${address}`
       );
@@ -295,7 +305,10 @@ export const listUserEmailBoxes = async (userId: string) => {
   try {
     const boxes = await EmailBox.find({
       userId,
-      expiresAt: { $gt: new Date() }, // Apenas não expiradas
+      $or: [
+        { expiresAt: { $gt: new Date() } },  // Não expiradas
+        { expiresAt: { $exists: false } },     // Legadas sem expiresAt
+      ],
     }).sort({ createdAt: -1 });
 
     // Adiciona tempo restante para cada caixa
