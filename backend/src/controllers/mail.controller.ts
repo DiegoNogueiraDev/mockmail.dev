@@ -281,8 +281,8 @@ export const listEmails = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: "Not authenticated" });
     }
 
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);
     const skip = (page - 1) * limit;
 
     // Try to get from cache first

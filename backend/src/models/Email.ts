@@ -55,4 +55,7 @@ EmailSchema.index({ messageId: 1 }, { unique: true, sparse: true });
 // Índice para busca de emails por caixa
 EmailSchema.index({ to: 1, date: -1 });
 
+// Índice para ordenação por data de criação (dashboard, admin, listagens)
+EmailSchema.index({ createdAt: -1 });
+
 export default mongoose.model<IEmail>("Email", EmailSchema);

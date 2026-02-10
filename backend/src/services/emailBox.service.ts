@@ -128,7 +128,7 @@ export const getLatestEmailBySubjectService = async (
       from: userEmail,
       to: address,
       subject: {
-        $regex: subject,
+        $regex: subject.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
         $options: "i",
       },
     })

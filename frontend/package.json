@@ -10,8 +10,10 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.2.7",
+    "@types/dompurify": "^3.0.5",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "dompurify": "^3.3.1",
     "lucide-react": "^0.541.0",
     "next": "15.5.0",
     "react": "19.1.0",

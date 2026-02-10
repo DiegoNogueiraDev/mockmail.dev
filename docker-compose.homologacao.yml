@@ -25,7 +25,7 @@ services:
     container_name: mockmail-mongodb-hml
     restart: unless-stopped
     ports:
-      - "27018:27017"
+      - "127.0.0.1:27018:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-mockmail_hml_2026}
@@ -51,7 +51,7 @@ services:
     container_name: mockmail-redis-hml
     restart: unless-stopped
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-mockmail_hml_2026}
     volumes:
       - redis_hml_data:/data

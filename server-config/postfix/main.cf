@@ -55,12 +55,18 @@ message_size_limit = 10240000
 milter_default_action = accept
 milter_protocol = 2
 
+# Rate limiting - proteção contra abuso
+smtpd_client_connection_rate_limit = 30
+smtpd_client_message_rate_limit = 60
+smtpd_client_recipient_rate_limit = 100
+anvil_rate_time_unit = 60s
+
 # Configuração de logs
 maillog_file = /var/log/mail.log
 
 # Virtual catch-all alias
 transport_maps = hash:/etc/postfix/transport
-luser_relay = email-processord
+luser_relay = email-processor
 
 # Cortex
 virtual_alias_domains = cortexflow.space

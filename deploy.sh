@@ -490,7 +490,7 @@ setup_email_processor() {
     # Criar FIFO se não existir (usado pelo Postfix)
     if [ ! -p /var/spool/email-processor ]; then
         sudo mkfifo /var/spool/email-processor 2>/dev/null || true
-        sudo chmod 666 /var/spool/email-processor 2>/dev/null || true
+        sudo chmod 620 /var/spool/email-processor 2>/dev/null || true
         log_info "FIFO criado em /var/spool/email-processor"
     fi
 

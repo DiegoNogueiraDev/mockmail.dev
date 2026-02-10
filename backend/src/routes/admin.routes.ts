@@ -321,20 +321,33 @@ router.get("/users", async (req: Request, res: Response) => {
       User.countDocuments(query),
     ]);
 
-    // Adicionar contagem de caixas para cada usuário
-    const usersWithStats = await Promise.all(
-      users.map(async (u: any) => {
-        const boxCount = await EmailBox.countDocuments({ userId: u._id });
-        const emailCount = await Email.countDocuments({
-          emailBox: { $in: await EmailBox.find({ userId: u._id }).select("_id") },
-        });
-        return {
-          ...u,
-          boxCount,
-          emailCount,
-        };
-      })
-    );
+    // Buscar stats de caixas e emails em batch (evita N+1)
+    const userIds = users.map((u: any) => u._id);
+    const [boxStats, emailStats] = await Promise.all([
+      EmailBox.aggregate([
+        { $match: { userId: { $in: userIds } } },
+        { $group: { _id: "$userId", boxCount: { $sum: 1 } } },
+      ]),
+      EmailBox.aggregate([
+        { $match: { userId: { $in: userIds } } },
+        {
+          $lookup: {
+            from: "emails",
+            localField: "_id",
+            foreignField: "emailBox",
+            as: "emails",
+          },
+        },
+        { $group: { _id: "$userId", emailCount: { $sum: { $size: "$emails" } } } },
+      ]),
+    ]);
+    const boxCountMap = new Map(boxStats.map((s: any) => [s._id.toString(), s.boxCount]));
+    const emailCountMap = new Map(emailStats.map((s: any) => [s._id.toString(), s.emailCount]));
+    const usersWithStats = users.map((u: any) => ({
+      ...u,
+      boxCount: boxCountMap.get(u._id.toString()) || 0,
+      emailCount: emailCountMap.get(u._id.toString()) || 0,
+    }));
 
     const responseData = {
       data: usersWithStats,
@@ -386,78 +399,40 @@ router.get("/users/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "Usuário não encontrado" });
     }
 
-    // Buscar estatísticas do usuário
-    const [
-      totalBoxes,
-      activeBoxes,
-      expiredBoxes,
-      totalEmails,
-      recentBoxes,
-      emailsByDay,
-    ] = await Promise.all([
-      // Total de caixas
-      EmailBox.countDocuments({ userId: user._id }),
-      // Caixas ativas
-      EmailBox.countDocuments({
-        userId: user._id,
-        $or: [
-          { expiresAt: { $exists: false } },
-          { expiresAt: { $gt: new Date() } },
-        ],
-      }),
-      // Caixas expiradas
-      EmailBox.countDocuments({
-        userId: user._id,
-        expiresAt: { $exists: true, $lte: new Date() },
-      }),
-      // Total de emails
-      Email.countDocuments({
-        emailBox: { $in: await EmailBox.find({ userId: user._id }).select("_id") },
-      }),
-      // Últimas 5 caixas
+    // Buscar boxes do usuário para reusar nos queries
+    const userBoxes = await EmailBox.find({ userId: user._id }).select("_id expiresAt").lean();
+    const userBoxIds = userBoxes.map((b: any) => b._id);
+    const now = new Date();
+
+    const totalBoxes = userBoxes.length;
+    const activeBoxes = userBoxes.filter((b: any) => !b.expiresAt || new Date(b.expiresAt) > now).length;
+    const expiredBoxes = userBoxes.filter((b: any) => b.expiresAt && new Date(b.expiresAt) <= now).length;
+
+    const [totalEmails, recentBoxes, emailsByDay] = await Promise.all([
+      Email.countDocuments({ emailBox: { $in: userBoxIds } }),
       EmailBox.find({ userId: user._id })
         .sort({ createdAt: -1 })
         .limit(5)
         .lean(),
-      // Emails por dia (últimos 7 dias)
       Email.aggregate([
-        {
-          $lookup: {
-            from: "emailboxes",
-            localField: "emailBox",
-            foreignField: "_id",
-            as: "box",
-          },
-        },
-        { $unwind: "$box" },
-        { $match: { "box.userId": user._id } },
-        {
-          $match: {
-            receivedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-          },
-        },
-        {
-          $group: {
-            _id: { $dateToString: { format: "%Y-%m-%d", date: "$receivedAt" } },
-            count: { $sum: 1 },
-          },
-        },
+        { $match: { emailBox: { $in: userBoxIds }, createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } },
+        { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
     ]);
 
-    // Adicionar contagem de emails para cada caixa recente
-    const recentBoxesWithStats = await Promise.all(
-      recentBoxes.map(async (box: any) => {
-        const emailCount = await Email.countDocuments({ emailBox: box._id });
-        const expired = box.expiresAt ? new Date(box.expiresAt) <= new Date() : false;
-        return {
-          ...box,
-          emailCount,
-          expired,
-        };
-      })
-    );
+    // Buscar contagem de emails para caixas recentes em batch
+    const recentBoxIds = recentBoxes.map((b: any) => b._id);
+    const emailCounts = await Email.aggregate([
+      { $match: { emailBox: { $in: recentBoxIds } } },
+      { $group: { _id: "$emailBox", count: { $sum: 1 } } },
+    ]);
+    const emailCountMap = new Map(emailCounts.map((e: any) => [e._id.toString(), e.count]));
+    const recentBoxesWithStats = recentBoxes.map((box: any) => ({
+      ...box,
+      emailCount: emailCountMap.get(box._id.toString()) || 0,
+      expired: box.expiresAt ? new Date(box.expiresAt) <= now : false,
+    }));
 
     const responseData = {
       user,
@@ -526,19 +501,19 @@ router.get("/boxes", async (req: Request, res: Response) => {
       EmailBox.countDocuments(query),
     ]);
 
-    // Adicionar contagem de emails e status
-    const boxesWithStats = await Promise.all(
-      boxes.map(async (box: any) => {
-        const emailCount = await Email.countDocuments({ emailBox: box._id });
-        const expired = box.expiresAt ? new Date(box.expiresAt) <= now : false;
-        return {
-          ...box,
-          emailCount,
-          expired,
-          user: box.userId,
-        };
-      })
-    );
+    // Buscar contagem de emails em batch (evita N+1)
+    const boxIds = boxes.map((b: any) => b._id);
+    const emailCounts = await Email.aggregate([
+      { $match: { emailBox: { $in: boxIds } } },
+      { $group: { _id: "$emailBox", count: { $sum: 1 } } },
+    ]);
+    const emailCountMap = new Map(emailCounts.map((e: any) => [e._id.toString(), e.count]));
+    const boxesWithStats = boxes.map((box: any) => ({
+      ...box,
+      emailCount: emailCountMap.get(box._id.toString()) || 0,
+      expired: box.expiresAt ? new Date(box.expiresAt) <= now : false,
+      user: box.userId,
+    }));
 
     const responseData = {
       data: boxesWithStats,

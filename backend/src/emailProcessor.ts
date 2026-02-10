@@ -28,7 +28,11 @@ dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 
 // Configurações via variáveis de ambiente
 const FIFO_PATH = process.env.MOCKMAIL_FIFO_PATH || "/var/spool/email-processor";
-const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN || "mockmail-internal-2026";
+const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN;
+if (!INTERNAL_TOKEN) {
+  log.error("FATAL: INTERNAL_API_TOKEN não configurado. Defina INTERNAL_API_TOKEN no .env");
+  process.exit(1);
+}
 const DEBUG_MODE = process.env.MOCKMAIL_DEBUG === "true";
 const LOG_DIR = "/var/log/mockmail";
 
@@ -228,10 +232,18 @@ async function readFromFifoContinuous(): Promise<void> {
 
   const stream = fs.createReadStream(FIFO_PATH, { encoding: "utf-8" });
   let buffer = "";
+  const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB - limite de segurança
 
   stream.on("data", async (chunk: Buffer | string) => {
     const data = chunk.toString();
     log.debug(`Recebidos ${data.length} bytes`);
+
+    // Proteção contra buffer overflow
+    if (buffer.length + data.length > MAX_BUFFER_SIZE) {
+      log.error(`Buffer excedeu ${MAX_BUFFER_SIZE} bytes, descartando dados acumulados`);
+      saveFailedEmail(buffer, "buffer-overflow");
+      buffer = "";
+    }
 
     buffer += data;
 

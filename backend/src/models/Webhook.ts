@@ -53,12 +53,31 @@ const WebhookSchema = new Schema(
         validator: (v: string) => {
           try {
             const url = new URL(v);
-            return url.protocol === "https:" || url.protocol === "http:";
+            if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+            const hostname = url.hostname.toLowerCase();
+            // Bloquear IPs privados, localhost e cloud metadata
+            const blocked = [
+              /^localhost$/,
+              /^127\./,
+              /^10\./,
+              /^172\.(1[6-9]|2\d|3[01])\./,
+              /^192\.168\./,
+              /^169\.254\./,
+              /^0\./,
+              /^\[::1\]$/,
+              /^fc00:/,
+              /^fe80:/,
+              /^\[?::ffff:(?:127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.)/,
+              /^\[?::ffff:(7f|0a|ac1[0-9a-f]|c0a8|a9fe)/,
+              /^0000:/,
+              /^\[?0+:0+:0+:0+:0+:(0+|ffff):/,
+            ];
+            return !blocked.some(pattern => pattern.test(hostname));
           } catch {
             return false;
           }
         },
-        message: "URL inválida",
+        message: "URL inválida ou aponta para endereço interno bloqueado",
       },
     },
     secret: {

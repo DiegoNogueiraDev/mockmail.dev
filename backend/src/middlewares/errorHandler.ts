@@ -45,6 +45,14 @@ export const errorHandler = (
     });
   }
 
+  // Tratar CastError do Mongoose (ObjectId inválido) como 400
+  if (err.name === 'CastError') {
+    return res.status(400).json({
+      error: 'Invalid ID format',
+      requestId,
+    });
+  }
+
   // Verificar statusCode customizado
   if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
     return res.status(err.statusCode).json({

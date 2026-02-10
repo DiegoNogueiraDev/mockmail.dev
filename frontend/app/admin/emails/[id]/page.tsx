@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import DOMPurify from 'dompurify';
 import { api } from '@/lib/apiClient';
 import {
   Mail,
@@ -54,6 +55,18 @@ export default function EmailDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw'>('html');
   const [copied, setCopied] = useState<string | null>(null);
+
+  // Sanitizar HTML do email para prevenir XSS
+  const sanitizedHtml = useMemo(() => {
+    if (!email?.body?.rawHtml) return '';
+    return DOMPurify.sanitize(email.body.rawHtml, {
+      ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','hr','ul','ol','li','a','b','strong','i','em','u','s','sub','sup','blockquote','pre','code','table','thead','tbody','tr','th','td','img','div','span','font','center'],
+      ALLOWED_ATTR: ['href','src','alt','title','width','height','style','align','valign','bgcolor','color','border','cellpadding','cellspacing','class','target'],
+      ALLOW_DATA_ATTR: false,
+      ADD_ATTR: ['target'],
+      FORBID_TAGS: ['script','iframe','object','embed','form','input','textarea','select','button'],
+    });
+  }, [email?.body?.rawHtml]);
 
   const fetchEmail = async () => {
     setLoading(true);
@@ -292,7 +305,7 @@ export default function EmailDetailPage() {
           {viewMode === 'html' && (
             <div
               className="prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: email.body.rawHtml }}
+              dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
               data-testid="email-html-content"
             />
           )}

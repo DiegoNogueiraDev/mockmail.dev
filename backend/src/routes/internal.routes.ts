@@ -9,7 +9,10 @@ import { parseRawEmail, processAndPersistEmail } from "../services/emailProcesso
 const router = Router();
 
 // Token interno para autenticação entre serviços
-const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN || "mockmail-internal-2026";
+if (!process.env.INTERNAL_API_TOKEN) {
+  throw new Error("FATAL: INTERNAL_API_TOKEN não configurado. Defina INTERNAL_API_TOKEN no .env");
+}
+const INTERNAL_TOKEN: string = process.env.INTERNAL_API_TOKEN;
 
 /**
  * Middleware de autenticação interna

@@ -16,9 +16,17 @@ const emailRouter = Router();
 
 /** @route POST /api/mail/process
  *  @desc Processa e-mails recebidos, associando caixas e salvando os dados.
- *  @access Private (JWT necessário)
+ *  @access Internal only (requer X-Internal-Token)
  */
-emailRouter.post("/process", validateEmailRequest, async (req, res, next) => {
+emailRouter.post("/process", (req, res, next) => {
+  const token = req.headers["x-internal-token"];
+  const expectedToken = process.env.INTERNAL_API_TOKEN;
+  if (!expectedToken || !token || token !== expectedToken) {
+    logger.warn(`MAIL-ROUTE - POST /api/mail/process - Acesso não autorizado: ${req.ip}`);
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  next();
+}, validateEmailRequest, async (req, res, next) => {
   try {
     logger.info(`MAIL-ROUTE - POST /api/mail/process - Iniciando requisição`);
     await processMail(req, res);
