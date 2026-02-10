@@ -27,4 +27,19 @@ if (!process.env.PORT) {
     "CONFIG-ENV - PORT não está configurada nas variáveis de ambiente"
   );
 }
+if (!process.env.JWT_REFRESH_SECRET) {
+  throw new Error(
+    "CONFIG-ENV - JWT_REFRESH_SECRET não está configurada nas variáveis de ambiente"
+  );
+}
+if (!process.env.CSRF_SECRET) {
+  throw new Error(
+    "CONFIG-ENV - CSRF_SECRET não está configurada nas variáveis de ambiente"
+  );
+}
+if (!process.env.INTERNAL_API_TOKEN) {
+  throw new Error(
+    "CONFIG-ENV - INTERNAL_API_TOKEN não está configurada nas variáveis de ambiente"
+  );
+}
 logger.info("CONFIG-ENV - Variáveis de ambiente carregadas com sucesso");

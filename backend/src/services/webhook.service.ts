@@ -3,6 +3,64 @@ import Webhook, { IWebhook, WebhookEvent, WebhookStatus } from "../models/Webhoo
 import WebhookDelivery from "../models/WebhookDelivery";
 import logger from "../utils/logger";
 
+import dns from "dns/promises";
+import net from "net";
+
+/**
+ * Blocked IP ranges for SSRF protection.
+ * Validates resolved IPs at delivery time to prevent DNS rebinding attacks.
+ */
+const BLOCKED_IP_PATTERNS = [
+  /^127\./,                    // Loopback IPv4
+  /^10\./,                     // Private Class A
+  /^172\.(1[6-9]|2\d|3[01])\./, // Private Class B
+  /^192\.168\./,               // Private Class C
+  /^169\.254\./,               // Link-local / Cloud metadata
+  /^0\./,                      // Current network
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./, // Carrier-grade NAT
+  /^198\.1[89]\./,             // Benchmarking
+  /^::1$/,                     // Loopback IPv6
+  /^fc00:/i,                   // Unique local IPv6
+  /^fe80:/i,                   // Link-local IPv6
+  /^::ffff:(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.)/,
+];
+
+const isBlockedIP = (ip: string): boolean => {
+  return BLOCKED_IP_PATTERNS.some(pattern => pattern.test(ip));
+};
+
+/**
+ * Resolves hostname to IPs and validates none are internal/blocked.
+ * Prevents DNS rebinding attacks by checking at delivery time.
+ */
+const validateWebhookURL = async (webhookUrl: string): Promise<void> => {
+  const url = new URL(webhookUrl);
+  const hostname = url.hostname.replace(/^\[|\]$/g, ""); // Strip IPv6 brackets
+
+  // Direct IP check
+  if (net.isIP(hostname)) {
+    if (isBlockedIP(hostname)) {
+      throw new Error(`Webhook URL resolves to blocked IP: ${hostname}`);
+    }
+    return;
+  }
+
+  // Resolve DNS and check all IPs
+  const addresses = await dns.resolve4(hostname).catch(() => [] as string[]);
+  const addresses6 = await dns.resolve6(hostname).catch(() => [] as string[]);
+  const allAddresses = [...addresses, ...addresses6];
+
+  if (allAddresses.length === 0) {
+    throw new Error(`Webhook URL hostname could not be resolved: ${hostname}`);
+  }
+
+  for (const ip of allAddresses) {
+    if (isBlockedIP(ip)) {
+      throw new Error(`Webhook URL resolves to blocked IP: ${ip}`);
+    }
+  }
+};
+
 const WEBHOOK_TIMEOUT = 10000; // 10 seconds
 const MAX_RETRY_DELAY = 60000; // 1 minute max delay between retries
 
@@ -74,8 +132,28 @@ export const deliverWebhook = async (
   const signature = generateSignature(`${timestamp}.${payloadString}`, webhook.secret);
 
   try {
+    // SSRF protection: validate resolved IPs at delivery time (prevents DNS rebinding)
+    await validateWebhookURL(webhook.url);
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
+
+    // Sanitize user-provided headers: block sensitive ones
+    const BLOCKED_HEADERS = new Set([
+      "authorization", "cookie", "set-cookie", "host",
+      "x-forwarded-for", "x-real-ip", "proxy-authorization",
+      "x-internal-token",
+    ]);
+    const safeHeaders: Record<string, string> = {};
+    if (webhook.headers) {
+      for (const [key, value] of Object.entries(webhook.headers)) {
+        if (!BLOCKED_HEADERS.has(key.toLowerCase())) {
+          safeHeaders[key] = value;
+        } else {
+          logger.warn(`Webhook ${webhook.name}: blocked sensitive header "${key}"`);
+        }
+      }
+    }
 
     const response = await fetch(webhook.url, {
       method: "POST",
@@ -85,7 +163,7 @@ export const deliverWebhook = async (
         "X-MockMail-Event": event,
         "X-MockMail-Delivery-Id": payload.id,
         "User-Agent": "MockMail-Webhook/1.0",
-        ...(webhook.headers || {}),
+        ...safeHeaders,
       },
       body: payloadString,
       signal: controller.signal,
@@ -143,8 +221,8 @@ export const deliverWebhook = async (
 
     await handleWebhookFailure(webhook, errorMsg, attempt);
 
-    // Retry with exponential backoff
-    if (attempt < webhook.retryCount) {
+    // Retry with exponential backoff (skip retry for SSRF blocks)
+    if (attempt < webhook.retryCount && !errorMsg.includes("blocked IP")) {
       const delay = Math.min(Math.pow(2, attempt) * 1000, MAX_RETRY_DELAY);
       logger.info(`Retrying webhook ${webhook.name} in ${delay}ms (attempt ${attempt + 1}/${webhook.retryCount})`);
 
@@ -157,7 +235,7 @@ export const deliverWebhook = async (
 
     return false;
   }
-};
+};;
 
 /**
  * Handle webhook delivery failure

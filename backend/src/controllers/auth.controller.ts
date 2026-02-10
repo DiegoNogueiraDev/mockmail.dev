@@ -8,6 +8,22 @@ import {
 import { generateTokenPair, verifyAccessToken, blacklistToken, refreshTokens } from "../services/token.service";
 import UserSession from "../models/UserSession";
 import logger from "../utils/logger";
+import { getRedisClient } from "../config/redis";
+
+// Helper: increment failed login attempts in Redis
+const incrementFailedAttempts = async (key: string, ttlSeconds: number): Promise<void> => {
+  try {
+    const redis = getRedisClient();
+    if (redis) {
+      const current = await redis.incr(key);
+      if (current === 1) {
+        await redis.expire(key, ttlSeconds);
+      }
+    }
+  } catch {
+    // Fail open: don't block login if Redis is down
+  }
+};
 
 // Cookie configuration for httpOnly tokens
 const getAuthCookieOptions = () => ({
@@ -95,6 +111,29 @@ export const login = async (req: Request, res: Response) => {
   }
 
   const sanitizedEmail = sanitizeEmail(email);
+
+  // Brute force protection: check failed attempts
+  const MAX_FAILED_ATTEMPTS = 5;
+  const LOCKOUT_DURATION_SECONDS = 15 * 60; // 15 minutes
+  const lockoutKey = `login_lockout:${sanitizedEmail}`;
+
+  try {
+    const redis = getRedisClient();
+    if (redis) {
+      const failedAttempts = await redis.get(lockoutKey);
+      if (failedAttempts && parseInt(failedAttempts) >= MAX_FAILED_ATTEMPTS) {
+        const ttl = await redis.ttl(lockoutKey);
+        logger.warn(`CONTROL-AUTH - Conta bloqueada por brute force: ${sanitizedEmail} (${ttl}s restantes)`);
+        return res.status(429).json({
+          error: `Conta temporariamente bloqueada por excesso de tentativas. Tente novamente em ${Math.ceil(ttl / 60)} minutos.`,
+        });
+      }
+    }
+  } catch (redisErr) {
+    logger.warn(`CONTROL-AUTH - Redis indisponível para brute force check: ${(redisErr as Error).message}`);
+    // Continue login without lockout check (fail open for availability)
+  }
+
   logger.info(`CONTROL-AUTH - Tentativa de login com o email: ${sanitizedEmail}`);
 
   try {
@@ -104,6 +143,7 @@ export const login = async (req: Request, res: Response) => {
       logger.warn(
         `CONTROL-AUTH - Login falhou: Usuário não encontrado para o email: ${sanitizedEmail}`
       );
+      await incrementFailedAttempts(lockoutKey, LOCKOUT_DURATION_SECONDS);
       // Mensagem genérica por segurança (não revelar se email existe)
       return res.status(401).json({ error: "Email ou senha incorretos." });
     }
@@ -114,8 +154,15 @@ export const login = async (req: Request, res: Response) => {
       logger.warn(
         `CONTROL-AUTH - Login falhou: Credenciais inválidas para o email: ${sanitizedEmail}`
       );
+      await incrementFailedAttempts(lockoutKey, LOCKOUT_DURATION_SECONDS);
       return res.status(401).json({ error: "Email ou senha incorretos." });
     }
+
+    // Login successful: clear failed attempts
+    try {
+      const redis = getRedisClient();
+      if (redis) await redis.del(lockoutKey);
+    } catch { /* ignore */ }
 
     // Gerando par de tokens (access + refresh)
     const tokens = await generateTokenPair(user.id);
@@ -164,7 +211,7 @@ export const login = async (req: Request, res: Response) => {
     logger.error(`Detalhes do erro: ${(error as Error).message}`);
     res.status(500).json({ error: "Erro interno do servidor. Tente novamente mais tarde." });
   }
-};
+};;
 
 export const register = async (req: Request, res: Response) => {
   const { email, password, name } = req.body;

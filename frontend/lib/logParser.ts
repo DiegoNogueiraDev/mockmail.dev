@@ -2,11 +2,19 @@ import fs from 'fs';
 import path from 'path';
 import { EmailStatus, EmailStep, EmailStepStatus, LogEntry, LogParserOptions } from '@/types/email';
 
+// Allowed log directories (whitelist)
+const ALLOWED_LOG_PATHS = ['/var/log/mockmail'];
+
 export class LogParser {
   private logsPath: string;
 
   constructor(logsPath: string = '/var/log/mockmail') {
-    this.logsPath = logsPath;
+    // Path traversal protection: resolve and validate against whitelist
+    const resolved = path.resolve(logsPath);
+    if (!ALLOWED_LOG_PATHS.some(allowed => resolved === allowed || resolved.startsWith(allowed + '/'))) {
+      throw new Error(`LogParser: path not allowed: ${resolved}`);
+    }
+    this.logsPath = resolved;
   }
 
   /**
@@ -207,7 +215,7 @@ export class LogParser {
   private parseLogLine(line: string): LogEntry | null {
     try {
       // Regex para capturar timestamp, level e mensagem
-      const logRegex = /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\s*-\s*(\w+)\s*-\s*(.*)/;
+      const logRegex = /(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\s*-\s*(\w+)\s*-\s*([^\n]*)/;
       const match = line.match(logRegex);
 
       if (match) {

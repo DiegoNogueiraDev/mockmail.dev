@@ -54,6 +54,8 @@ const WebhookSchema = new Schema(
           try {
             const url = new URL(v);
             if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+            // Require HTTPS in production
+            if (process.env.NODE_ENV === "production" && url.protocol !== "https:") return false;
             const hostname = url.hostname.toLowerCase();
             // Bloquear IPs privados, localhost e cloud metadata
             const blocked = [

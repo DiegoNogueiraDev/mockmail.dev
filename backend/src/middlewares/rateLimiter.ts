@@ -1,23 +1,48 @@
 import rateLimit from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
+import { Request, Response } from 'express';
 import { getRedisClient } from '../config/redis';
 import logger from '../utils/logger';
 
+let redisAvailable = true;
+
 /**
- * Cria um store Redis para rate limiting, com fallback para memória
+ * Cria um store Redis para rate limiting.
+ * Fail closed: se Redis não estiver disponível, rejeita requisições em vez de cair para memória.
  */
 const createStore = (prefix: string) => {
   const redisClient = getRedisClient();
 
   if (!redisClient) {
-    logger.warn(`RATE-LIMIT - Redis não disponível para ${prefix}, usando memória (pode causar memory leak!)`);
-    return undefined; // express-rate-limit usará MemoryStore por padrão
+    logger.warn(`RATE-LIMIT - Redis não disponível para ${prefix}, rate limiting em modo fail-closed`);
+    redisAvailable = false;
+    return undefined;
   }
 
+  redisAvailable = true;
   return new RedisStore({
     sendCommand: (...args: string[]) => redisClient.sendCommand(args),
     prefix: `rate-limit:${prefix}:`,
   });
+};
+
+/**
+ * Middleware que bloqueia requisições quando Redis está indisponível (fail closed).
+ * Permite apenas health checks.
+ */
+export const rateLimitFailClosed = (req: Request, res: Response, next: Function) => {
+  if (!redisAvailable && req.path !== '/api/health') {
+    const redisClient = getRedisClient();
+    if (redisClient) {
+      redisAvailable = true;
+      return next();
+    }
+    logger.warn(`RATE-LIMIT - Fail closed: Redis indisponível, bloqueando ${req.path}`);
+    return res.status(503).json({
+      message: 'Service temporarily unavailable. Please try again later.',
+    });
+  }
+  next();
 };
 
 /**

@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { readFile } from 'fs/promises';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
 
 const LOG_FILE = '/var/log/mockmail/email_processor.log';
 
@@ -119,11 +115,21 @@ async function getEmailMetrics() {
   }
 }
 
+async function getPM2Processes(): Promise<PM2Process[]> {
+  try {
+    // Read PM2 process list from dump file instead of exec (no shell injection risk)
+    const pm2Home = process.env.PM2_HOME || `${process.env.HOME}/.pm2`;
+    const dumpFile = `${pm2Home}/dump.pm2`;
+    const content = await readFile(dumpFile, 'utf-8');
+    return JSON.parse(content) as PM2Process[];
+  } catch {
+    return [];
+  }
+}
+
 async function getPM2Status() {
   try {
-    // pm2 jlist é seguro pois não usa input do usuário
-    const { stdout } = await execAsync('pm2 jlist');
-    const processes = JSON.parse(stdout) as PM2Process[];
+    const processes = await getPM2Processes();
     const mockMailApi = processes.find((p) => p.name === 'mockmail-api');
 
     if (mockMailApi) {
@@ -143,32 +149,25 @@ async function getPM2Status() {
     }
 
     return null;
-  } catch (error) {
-    // Error getting PM2 status
+  } catch {
     return null;
   }
 }
 
 async function getSystemStatus() {
   try {
-    // Comandos fixos sem input do usuário - seguros
-    const { stdout: pm2Status } = await execAsync('pm2 jlist');
-    const processes = JSON.parse(pm2Status) as PM2Process[];
+    const processes = await getPM2Processes();
     const pm2Running = processes.some((p) => p.name === 'mockmail-api' && p.pm2_env.status === 'online');
+    const processorRunning = processes.some((p) => p.name === 'mockmail-processor' && p.pm2_env.status === 'online');
 
-    // Verificar Python processor de forma segura
-    const { stdout: pythonStatus } = await execAsync('pgrep -f email_processor.py || echo "0"');
-    const pythonRunning = pythonStatus.trim() !== '0' && pythonStatus.trim() !== '';
-
-    if (pm2Running && pythonRunning) {
+    if (pm2Running && processorRunning) {
       return 'online';
-    } else if (pm2Running || pythonRunning) {
+    } else if (pm2Running || processorRunning) {
       return 'warning';
     } else {
       return 'error';
     }
-  } catch (error) {
-    // Error checking system status
+  } catch {
     return 'error';
   }
 }

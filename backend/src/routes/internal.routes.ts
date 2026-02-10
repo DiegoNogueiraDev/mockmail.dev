@@ -3,6 +3,7 @@
  * Usadas para comunicação entre serviços internos
  */
 import { Router, Request, Response } from "express";
+import crypto from "crypto";
 import logger from "../utils/logger";
 import { parseRawEmail, processAndPersistEmail } from "../services/emailProcessor.service";
 
@@ -21,7 +22,12 @@ const INTERNAL_TOKEN: string = process.env.INTERNAL_API_TOKEN;
 const internalAuthMiddleware = (req: Request, res: Response, next: Function) => {
   const token = req.headers["x-internal-token"];
 
-  if (!token || token !== INTERNAL_TOKEN) {
+  if (
+    !token ||
+    typeof token !== "string" ||
+    token.length !== INTERNAL_TOKEN.length ||
+    !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(INTERNAL_TOKEN))
+  ) {
     logger.warn(`INTERNAL-API - Tentativa de acesso não autorizado: ${req.ip}`);
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
@@ -65,8 +71,7 @@ router.post("/process-email", async (req: Request, res: Response) => {
     logger.error(`INTERNAL-API - Erro ao processar email: ${(error as Error).message}`);
     res.status(500).json({
       success: false,
-      message: "Error processing email",
-      error: (error as Error).message
+      message: "Error processing email"
     });
   }
 });

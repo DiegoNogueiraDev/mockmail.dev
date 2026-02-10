@@ -15,7 +15,7 @@ import "./tasks/cleanupTask";
 import { cleanupOldEmails } from "./tasks/cleanupTask";
 import logger from "./utils/logger";
 import { sanitizeMiddleware } from "./utils/sanitize";
-import { generalLimiter } from "./middlewares/rateLimiter";
+import { generalLimiter, rateLimitFailClosed } from "./middlewares/rateLimiter";
 import { healthCheck, readinessCheck, livenessCheck } from "./middlewares/healthCheck";
 import EmailBox from "./models/EmailBox";
 
@@ -87,9 +87,10 @@ const corsOptions = {
 app.use(cors(corsOptions));
 logger.info("✓ CORS configurado");
 
-// Rate Limiting
+// Rate Limiting (fail closed when Redis is unavailable)
+app.use(rateLimitFailClosed);
 app.use(generalLimiter);
-logger.info("✓ Rate limiting ativado");
+logger.info("✓ Rate limiting ativado (fail-closed mode)");
 
 // Sanitização
 app.use(sanitizeMiddleware);
