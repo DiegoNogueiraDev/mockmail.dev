@@ -6,7 +6,6 @@ import {
   getUserStats,
   validatePasswordStrength,
 } from "../services/user.service";
-import { revokeAllUserTokens } from "../services/token.service";
 import logger from "../utils/logger";
 
 /**
@@ -161,9 +160,6 @@ export const changePassword = async (req: Request, res: Response) => {
 
     // Attempt to change password
     await changeUserPassword(userId, currentPassword, newPassword);
-
-    // Optionally revoke all other sessions for security
-    // await revokeAllUserTokens(userId);
 
     logger.info(`CONTROL-PROFILE - Senha alterada para usuário ID: ${userId}`);
 

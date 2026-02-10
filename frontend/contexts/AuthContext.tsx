@@ -27,7 +27,6 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   loading: boolean;
-  isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<boolean>;
@@ -225,7 +224,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     isAuthenticated: !!user,
     loading,
-    isLoading: loading,
     login,
     logout,
     refreshAuth,

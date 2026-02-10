@@ -40,12 +40,6 @@ interface PM2Process {
   };
 }
 
-// Sanitiza uma string para uso seguro (remove caracteres perigosos)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function _sanitizeForLog(input: string): string {
-  return input.replace(/[^\w\s\-:.]/g, '');
-}
-
 // Lê e processa logs de forma segura (sem shell injection)
 async function getEmailMetrics() {
   try {

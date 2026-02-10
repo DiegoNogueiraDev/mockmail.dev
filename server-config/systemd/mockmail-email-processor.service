@@ -1,5 +1,12 @@
+# DEPRECATED: This systemd service is no longer used in production.
+# The email processor now runs as a TypeScript process managed by PM2:
+#   pm2 start ecosystem.config.js
+#   Process name: mockmail-processor
+#
+# This file is kept for reference only.
+
 [Unit]
-Description=MockMail Email Processor
+Description=MockMail Email Processor (DEPRECATED - use PM2)
 Documentation=https://github.com/DiegoNogueiraDev/mockmail.dev
 After=network-online.target postfix.service docker.service mockmail-api.service
 Wants=network-online.target
@@ -7,11 +14,10 @@ Requires=postfix.service docker.service
 
 [Service]
 Type=simple
-User=email-processor
-Group=email-processor
-WorkingDirectory=/opt/mockmail
-ExecStartPre=/bin/sleep 5
-ExecStart=/opt/mockmail/venv/bin/python /opt/mockmail/email_processor.py
+User=mockmail
+Group=mockmail
+WorkingDirectory=/home/mockmail/app/backend
+ExecStart=/usr/bin/node /home/mockmail/app/backend/dist/emailProcessor.js
 Restart=always
 RestartSec=15
 StandardOutput=journal

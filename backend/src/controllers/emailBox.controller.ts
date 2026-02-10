@@ -194,7 +194,7 @@ export const listBoxes = async (req: Request, res: Response) => {
     logger.error(`CONTROL-EMAILBOX - Error listing boxes: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
-};;;
+};
 
 /**
  * Get a single email box by ID
@@ -337,7 +337,7 @@ export const createBox = async (req: Request, res: Response) => {
 
     res.status(500).json({ success: false, message: "Internal server error" });
   }
-};;
+};
 
 /**
  * Delete an email box and all its emails
@@ -520,4 +520,4 @@ export const getBoxEmails = async (req: Request, res: Response) => {
     logger.error(`CONTROL-EMAILBOX - Error getting box emails: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
-};;
+};
