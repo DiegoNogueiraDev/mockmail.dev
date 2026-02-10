@@ -355,10 +355,14 @@ export const logout = async (req: Request, res: Response) => {
 
     // Blacklist tokens if available
     if (accessToken) {
-      await blacklistToken(accessToken).catch(() => {});
+      await blacklistToken(accessToken).catch((err) => {
+        logger.warn(`CONTROL-AUTH - Falha ao invalidar access token no logout: ${err instanceof Error ? err.message : err}`);
+      });
     }
     if (refreshToken) {
-      await blacklistToken(refreshToken).catch(() => {});
+      await blacklistToken(refreshToken).catch((err) => {
+        logger.warn(`CONTROL-AUTH - Falha ao invalidar refresh token no logout: ${err instanceof Error ? err.message : err}`);
+      });
     }
 
     // Clear cookies

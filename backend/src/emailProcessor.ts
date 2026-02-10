@@ -326,7 +326,7 @@ process.on("uncaughtException", (error) => {
 
 process.on("unhandledRejection", (reason, promise) => {
   log.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
-  process.exit(1);
+  // Não faz process.exit - apenas loga o erro e continua processando
 });
 
 // Inicia

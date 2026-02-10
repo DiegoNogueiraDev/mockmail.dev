@@ -11,12 +11,12 @@ import logger from "../utils/logger";
  */
 export const cleanupOrphanEmails = async (): Promise<number> => {
   try {
-    // Buscar todos os endereços de caixas existentes
-    const existingBoxAddresses = await EmailBox.distinct("address");
+    // Buscar todos os IDs de caixas existentes
+    const existingBoxIds = await EmailBox.distinct("_id");
 
-    // Deletar emails cujo "to" não corresponde a nenhuma caixa existente
+    // Deletar emails cujo emailBox (ObjectId) não corresponde a nenhuma caixa existente
     const result = await Email.deleteMany({
-      to: { $nin: existingBoxAddresses }
+      emailBox: { $nin: existingBoxIds }
     });
 
     if (result.deletedCount > 0) {
@@ -34,18 +34,18 @@ export const cleanupOrphanEmails = async (): Promise<number> => {
  * Cleanup de emails muito antigos como failsafe.
  * Isso garante que emails não fiquem indefinidamente caso algo falhe.
  *
- * Remove emails com mais de 48 horas (buffer de segurança além das 24h da caixa).
+ * Remove emails com mais de 25 horas (1h de buffer além das 24h da caixa).
  */
 export const cleanupOldEmails = async (): Promise<number> => {
   try {
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const twentyFiveHoursAgo = new Date(Date.now() - 25 * 60 * 60 * 1000);
 
     const result = await Email.deleteMany({
-      createdAt: { $lt: fortyEightHoursAgo }
+      createdAt: { $lt: twentyFiveHoursAgo }
     });
 
     if (result.deletedCount > 0) {
-      logger.info(`CLEANUP - ${result.deletedCount} emails antigos (>48h) removidos`);
+      logger.info(`CLEANUP - ${result.deletedCount} emails antigos (>25h) removidos`);
     }
 
     return result.deletedCount;

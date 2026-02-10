@@ -149,7 +149,9 @@ export const deliverWebhook = async (
       logger.info(`Retrying webhook ${webhook.name} in ${delay}ms (attempt ${attempt + 1}/${webhook.retryCount})`);
 
       setTimeout(() => {
-        deliverWebhook(webhook, event, data, attempt + 1);
+        deliverWebhook(webhook, event, data, attempt + 1).catch((retryErr) => {
+          logger.error(`Webhook retry failed for ${webhook.name}: ${retryErr instanceof Error ? retryErr.message : retryErr}`);
+        });
       }, delay);
     }
 

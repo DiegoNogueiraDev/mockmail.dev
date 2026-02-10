@@ -16,7 +16,10 @@ import logger from '../utils/logger';
 // Configuration
 const CSRF_COOKIE_NAME = process.env.CSRF_COOKIE_NAME || 'mockmail_csrf_token';
 const CSRF_HEADER_NAME = 'x-csrf-token';
-const CSRF_SECRET = process.env.CSRF_SECRET || 'mockmail-csrf-secret-change-in-production';
+if (!process.env.CSRF_SECRET) {
+  throw new Error("FATAL: CSRF_SECRET não configurado. Defina CSRF_SECRET no .env");
+}
+const CSRF_SECRET: string = process.env.CSRF_SECRET;
 
 // Cookie settings
 const getCookieOptions = () => ({

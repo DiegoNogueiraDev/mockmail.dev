@@ -4,7 +4,10 @@ import User from "../models/User";
 import logger from "../utils/logger"; // Importação do logger
 
 const SALT_ROUNDS = 10;
-const JWT_SECRET = process.env.JWT_SECRET || "defaultSecret";
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error("FATAL: JWT_SECRET não configurado. Defina JWT_SECRET no .env");
+}
 
 // Função para gerar hash da senha
 export const hashPassword = async (password: string): Promise<string> => {

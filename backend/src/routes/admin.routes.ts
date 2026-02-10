@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import mongoose from "mongoose";
 import { authMiddleware } from "../middlewares/authMiddleware";
 import logger from "../utils/logger";
 import EmailHistory from "../models/EmailHistory";
@@ -739,6 +740,9 @@ router.get("/sessions", async (req: Request, res: Response) => {
       query.status = status;
     }
     if (userId) {
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ success: false, message: "userId inválido" });
+      }
       query.userId = userId;
     }
 

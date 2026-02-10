@@ -169,6 +169,22 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
     // Extrai token do assunto (se existir)
     const token = extractTokenSubject(emailData.subject);
 
+    // Verificar limite diário ANTES de salvar o email
+    try {
+      const hasQuota = await incrementUserDailyUsage(userId);
+      if (!hasQuota) {
+        logger.warn(
+          `EMAIL-PROCESSOR - Usuário ${userId} excedeu limite diário de interações. ` +
+          `Email descartado: FROM=${from}, TO=${to}, SUBJECT=${emailData.subject}`
+        );
+        await saveToJsonFile(emailData);
+        return;
+      }
+    } catch (usageError) {
+      // fail-open: se falhar ao verificar limite, permite o email
+      logger.warn(`EMAIL-PROCESSOR - Falha ao verificar uso diário: ${(usageError as Error).message}`);
+    }
+
     // Salva o email no MongoDB
     const savedEmail = await saveEmail({
       from,
@@ -188,16 +204,6 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
     });
 
     logger.info(`EMAIL-PROCESSOR - Email persistido: ${savedEmail._id} para ${to}`);
-
-    // Incrementar contador de uso diário do usuário (conta como 1 interação)
-    try {
-      const hasQuota = await incrementUserDailyUsage(userId);
-      if (!hasQuota) {
-        logger.warn(`EMAIL-PROCESSOR - Usuário ${userId} excedeu limite diário de interações`);
-      }
-    } catch (usageError) {
-      logger.warn(`EMAIL-PROCESSOR - Falha ao incrementar uso diário: ${(usageError as Error).message}`);
-    }
 
     // Invalidar cache do usuário para refletir novo email
     try {

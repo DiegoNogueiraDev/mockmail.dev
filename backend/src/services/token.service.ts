@@ -2,7 +2,10 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import { getRedisClient } from '../config/redis';
 import logger from '../utils/logger';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'defaultSecret';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error("FATAL: JWT_SECRET não configurado. Defina JWT_SECRET no .env");
+}
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || JWT_SECRET + '_refresh';
 
 // Token durations

@@ -72,13 +72,25 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/admin/dashboard', request.url));
   }
 
-  // 7. Proteger rotas de API que não são públicas
+  // 7. Proteger rotas de API que acessam dados do sistema (logs, PM2, métricas)
+  const PROTECTED_API_ROUTES = ['/api/chart-data', '/api/daily-stats', '/api/errors', '/api/metrics'];
+  if (PROTECTED_API_ROUTES.some(route => pathname.startsWith(route))) {
+    if (!accessToken) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+    return NextResponse.next();
+  }
+
+  // 8. Outras rotas de API que não são públicas
   if (pathname.startsWith('/api/') && !PUBLIC_ROUTES.some(r => pathname.startsWith(r))) {
     // API routes são protegidas pelo authMiddleware no backend
     return NextResponse.next();
   }
 
-  // 8. Permitir acesso
+  // 9. Permitir acesso
   return NextResponse.next();
 }
 
