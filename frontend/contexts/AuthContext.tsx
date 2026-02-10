@@ -88,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return false;
       }
     } catch (error) {
-      console.error('[AuthContext] Auth verification error:', error);
+      // Auth verification failed silently
       setUser(null);
       return false;
     }
@@ -109,14 +109,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (response.ok) {
-        if (!isInitialCheck) {
-          console.log('[AuthContext] Token refreshed successfully');
-        }
         return true;
       }
       return false;
     } catch (error) {
-      console.error('[AuthContext] Token refresh error:', error);
+      // Token refresh failed
       return false;
     }
   };
@@ -167,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Redirecionar para o dashboard
       router.push('/admin/dashboard');
     } catch (error) {
-      console.error('[AuthContext] Login error:', error);
+      // Login failed - re-throw for caller to handle
       throw error;
     }
   };
@@ -186,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       });
     } catch (error) {
-      console.error('[AuthContext] Logout request failed:', error);
+      // Logout request failed - continue with local cleanup
     }
 
     setUser(null);

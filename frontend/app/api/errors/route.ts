@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { readFile } from 'fs/promises';
 
 const LOG_FILE = '/var/log/mockmail/email_processor.log';
@@ -103,13 +104,18 @@ async function parseLogErrors(): Promise<ErrorEntry[]> {
     // Ordenar por timestamp (mais recentes primeiro)
     return errors.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   } catch (error) {
-    console.error('Erro ao analisar logs:', error);
+    // Error parsing logs
     return [];
   }
 }
 
 export async function GET() {
   try {
+    const cookieStore = await cookies();
+    if (!cookieStore.get('mockmail_access_token')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const errors = await parseLogErrors();
 
     return NextResponse.json({
@@ -125,7 +131,7 @@ export async function GET() {
       lastUpdate: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Erro ao buscar erros:', error);
+    // Error fetching errors
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
       { status: 500 }

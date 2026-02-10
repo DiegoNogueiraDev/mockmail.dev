@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { readFile } from 'fs/promises';
 
 const LOG_FILE = '/var/log/mockmail/email_processor.log';
@@ -72,7 +73,7 @@ async function generateChartData(): Promise<ChartDataPoint[]> {
 
     return chartData;
   } catch (error) {
-    console.error('Erro ao gerar dados do gráfico:', error);
+    // Error generating chart data
 
     // Retornar zeros em caso de erro
     const fallbackData: ChartDataPoint[] = [];
@@ -96,6 +97,11 @@ async function generateChartData(): Promise<ChartDataPoint[]> {
 
 export async function GET() {
   try {
+    const cookieStore = await cookies();
+    if (!cookieStore.get('mockmail_access_token')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const chartData = await generateChartData();
 
     const totalSuccess = chartData.reduce((sum, point) => sum + point.success, 0);
@@ -113,7 +119,7 @@ export async function GET() {
       lastUpdate: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Erro ao buscar dados do gráfico:', error);
+    // Error fetching chart data
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
       { status: 500 }

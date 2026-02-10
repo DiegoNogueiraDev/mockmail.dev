@@ -104,9 +104,14 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
     return next();
   }
 
-  // Skip CSRF check for certain paths (like initial login)
-  const skipPaths = ['/api/auth/login', '/api/auth/register'];
+  // Skip CSRF check for certain paths (paths are relative to /api mount)
+  const skipPaths = ['/auth/login', '/auth/register', '/mail/process'];
   if (skipPaths.some((path) => req.path === path)) {
+    return next();
+  }
+
+  // Skip CSRF for internal service requests (use token auth instead)
+  if (req.headers['x-internal-token']) {
     return next();
   }
 

@@ -35,6 +35,8 @@ const securityHeaders = [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
+      "object-src 'none'",
+      "base-uri 'self'",
       "img-src 'self' data: https:",
       "font-src 'self'",
       "connect-src 'self' http://localhost:3000 https://api.mockmail.dev https://api.homologacao.mockmail.dev",

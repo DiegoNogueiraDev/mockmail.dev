@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import EmailBox from "../models/EmailBox";
 import Email from "../models/Email";
 import logger from "../utils/logger";
@@ -275,46 +276,37 @@ export const createBox = async (req: Request, res: Response) => {
       });
     }
 
-    // Verificar se já existe uma caixa com esse endereço
-    let box = await EmailBox.findOne({ address });
+    // Operação atômica: criar ou reativar caixa
     const now = new Date();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    if (box) {
-      // Caixa existe - verificar se pertence ao usuário
-      if (box.userId.toString() !== userId.toString()) {
-        return res.status(409).json({
-          success: false,
-          message: "Endereço já está em uso por outro usuário."
-        });
-      }
+    // Primeiro verifica se existe e pertence a outro usuário
+    const existingBox = await EmailBox.findOne({ address }).lean();
+    if (existingBox && existingBox.userId.toString() !== userId.toString()) {
+      return res.status(409).json({
+        success: false,
+        message: "Endereço já está em uso por outro usuário."
+      });
+    }
 
-      // Pertence ao usuário - reativar com nova expiração
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      box.expiresAt = expiresAt;
-      box.isCustom = isCustom;
-      await box.save();
+    // findOneAndUpdate atômico: atualiza se existe, cria se não
+    const box = await EmailBox.findOneAndUpdate(
+      { address, userId },
+      { $set: { expiresAt, isCustom }, $setOnInsert: { address, userId } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
+    if (existingBox) {
       logger.info(`CONTROL-EMAILBOX - Reactivated box ${address} for user ${userId} (new expiry: ${expiresAt.toISOString()})`);
     } else {
-      // Criar nova caixa
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-      box = new EmailBox({
-        address,
-        userId,
-        isCustom,
-        expiresAt,
-      });
-
-      await box.save();
       logger.info(`CONTROL-EMAILBOX - Created box ${address} for user ${userId} (expires: ${expiresAt.toISOString()})`);
     }
 
     // Invalidate user's boxes cache
     await invalidateUserBoxesCache(userId.toString());
 
-    const expiresAt = new Date(box.expiresAt);
-    const timeLeftMs = expiresAt.getTime() - now.getTime();
+    const boxExpiresAt = new Date(box.expiresAt);
+    const timeLeftMs = boxExpiresAt.getTime() - now.getTime();
     const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
 
     const emailCount = await Email.countDocuments({ to: box.address });
@@ -369,24 +361,33 @@ export const deleteBox = async (req: Request, res: Response) => {
 
     // Arquivar a caixa e seus emails no histórico antes de deletar
     const emailCount = await Email.countDocuments({ to: box.address });
-    let archivedHistory = null;
+    let archivedHistory: any = null;
 
-    if (emailCount > 0) {
-      archivedHistory = await archiveBoxOnDeletion(id, {
-        userId: userId.toString(),
-        userEmail: user.email || 'unknown',
-        userName: user.name || 'Unknown User',
-        userRole: user.role || 'user',
+    // Usar transação para garantir consistência na deleção
+    const session = await mongoose.startSession();
+    let deletedCount = 0;
+
+    try {
+      await session.withTransaction(async () => {
+        if (emailCount > 0) {
+          archivedHistory = await archiveBoxOnDeletion(id, {
+            userId: userId.toString(),
+            userEmail: user.email || 'unknown',
+            userName: user.name || 'Unknown User',
+            userRole: user.role || 'user',
+          });
+        }
+
+        const deletedEmails = await Email.deleteMany({ to: box.address }, { session });
+        deletedCount = deletedEmails.deletedCount;
+
+        await EmailBox.deleteOne({ _id: id }, { session });
       });
+    } finally {
+      await session.endSession();
     }
 
-    // Delete all emails for this box
-    const deletedEmails = await Email.deleteMany({ to: box.address });
-
-    // Delete the box
-    await EmailBox.deleteOne({ _id: id });
-
-    // Invalidate user's boxes, emails, and specific box email cache
+    // Invalidate caches after successful transaction
     await Promise.all([
       invalidateUserBoxesCache(userId.toString()),
       invalidateUserEmailsCache(userId.toString()),
@@ -394,14 +395,14 @@ export const deleteBox = async (req: Request, res: Response) => {
     ]);
 
     logger.info(
-      `CONTROL-EMAILBOX - Deleted box ${box.address} and ${deletedEmails.deletedCount} emails for user ${userId}. ` +
+      `CONTROL-EMAILBOX - Deleted box ${box.address} and ${deletedCount} emails for user ${userId}. ` +
       `${archivedHistory ? `Archived to history: ${archivedHistory._id}` : 'No emails to archive'}`
     );
 
     res.status(200).json({
       success: true,
       message: "Email box deleted successfully",
-      deletedEmails: deletedEmails.deletedCount,
+      deletedEmails: deletedCount,
       archived: archivedHistory ? true : false,
       historyId: archivedHistory?._id || null,
     });

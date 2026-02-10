@@ -46,8 +46,6 @@ export async function GET(request: NextRequest) {
       filterOptions.endDate = endDateObj.toISOString();
     }
 
-    console.log(`[API] Tracking request for ${email} with options:`, filterOptions);
-
     // Import LogParser dynamically to avoid issues
     const { LogParser } = await import('../../../lib/logParser');
     const logParser = new LogParser();

@@ -32,6 +32,11 @@ logger.info("ROUTE-ROUTER - Middleware de limite diário (500 req/dia) configura
 router.get("/csrf-token", csrfTokenHandler);
 logger.info("ROUTE-ROUTER - Endpoint CSRF token (/api/csrf-token) configurado");
 
+// Aplica proteção CSRF em todas as rotas de mutação (POST, PUT, DELETE)
+// Skips: GET/HEAD/OPTIONS, /auth/login, /auth/register, /mail/process, requests com X-Internal-Token
+router.use(csrfProtection);
+logger.info("ROUTE-ROUTER - Middleware CSRF protection configurado");
+
 try {
   // Agrupando rotas de autenticação
   router.use("/auth", authRoutes);

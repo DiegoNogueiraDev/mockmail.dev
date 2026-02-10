@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { readFile } from 'fs/promises';
 
 const LOG_FILE = '/var/log/mockmail/email_processor.log';
@@ -71,7 +72,7 @@ async function getDailyStats(date: string, logLines: string[]): Promise<DailySta
       successRate,
     };
   } catch (error) {
-    console.error(`Erro ao obter estatísticas para ${date}:`, error);
+    // Error getting stats for date
     return {
       date,
       emailsProcessed: 0,
@@ -83,6 +84,11 @@ async function getDailyStats(date: string, logLines: string[]): Promise<DailySta
 
 export async function GET() {
   try {
+    const cookieStore = await cookies();
+    if (!cookieStore.get('mockmail_access_token')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const now = new Date();
     const today = now.toISOString().substring(0, 10);
 
@@ -135,7 +141,7 @@ export async function GET() {
 
     return NextResponse.json(response);
   } catch (error) {
-    console.error('Erro ao buscar estatísticas diárias:', error);
+    // Error fetching daily stats
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
       { status: 500 }

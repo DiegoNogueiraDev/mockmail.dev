@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { readFile } from 'fs/promises';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -113,7 +114,7 @@ async function getEmailMetrics() {
       errorsToday,
     };
   } catch (error) {
-    console.error('Erro ao obter métricas de email:', error);
+    // Error reading email metrics
     return {
       totalProcessed: 0,
       errorRate: 0,
@@ -149,7 +150,7 @@ async function getPM2Status() {
 
     return null;
   } catch (error) {
-    console.error('Erro ao obter status PM2:', error);
+    // Error getting PM2 status
     return null;
   }
 }
@@ -173,7 +174,7 @@ async function getSystemStatus() {
       return 'error';
     }
   } catch (error) {
-    console.error('Erro ao verificar status do sistema:', error);
+    // Error checking system status
     return 'error';
   }
 }
@@ -197,13 +198,18 @@ async function getMongoDBStats() {
 
     return { users: 0, emailBoxes: 0 };
   } catch (error) {
-    console.error('Erro ao obter stats do MongoDB:', error);
+    // Error getting MongoDB stats
     return { users: 0, emailBoxes: 0 };
   }
 }
 
 export async function GET() {
   try {
+    const cookieStore = await cookies();
+    if (!cookieStore.get('mockmail_access_token')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const [emailMetrics, pm2Status, systemStatus, mongoStats] = await Promise.all([
       getEmailMetrics(),
       getPM2Status(),
@@ -228,7 +234,7 @@ export async function GET() {
 
     return NextResponse.json(metrics);
   } catch (error) {
-    console.error('Erro ao buscar métricas:', error);
+    // Error fetching metrics
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
       { status: 500 }
