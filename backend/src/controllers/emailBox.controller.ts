@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import mongoose from "mongoose";
 import EmailBox from "../models/EmailBox";
 import Email from "../models/Email";
 import logger from "../utils/logger";
@@ -363,29 +362,19 @@ export const deleteBox = async (req: Request, res: Response) => {
     const emailCount = await Email.countDocuments({ to: box.address });
     let archivedHistory: any = null;
 
-    // Usar transação para garantir consistência na deleção
-    const session = await mongoose.startSession();
-    let deletedCount = 0;
-
-    try {
-      await session.withTransaction(async () => {
-        if (emailCount > 0) {
-          archivedHistory = await archiveBoxOnDeletion(id, {
-            userId: userId.toString(),
-            userEmail: user.email || 'unknown',
-            userName: user.name || 'Unknown User',
-            userRole: user.role || 'user',
-          });
-        }
-
-        const deletedEmails = await Email.deleteMany({ to: box.address }, { session });
-        deletedCount = deletedEmails.deletedCount;
-
-        await EmailBox.deleteOne({ _id: id }, { session });
+    if (emailCount > 0) {
+      archivedHistory = await archiveBoxOnDeletion(id, {
+        userId: userId.toString(),
+        userEmail: user.email || 'unknown',
+        userName: user.name || 'Unknown User',
+        userRole: user.role || 'user',
       });
-    } finally {
-      await session.endSession();
     }
+
+    const deletedEmails = await Email.deleteMany({ to: box.address });
+    const deletedCount = deletedEmails.deletedCount;
+
+    await EmailBox.deleteOne({ _id: id });
 
     // Invalidate caches after successful transaction
     await Promise.all([
