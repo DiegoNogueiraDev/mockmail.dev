@@ -29,8 +29,7 @@ module.exports = {
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'production',
-        PORT: 3000,
-        INTERNAL_API_TOKEN: process.env.INTERNAL_API_TOKEN || ''
+        PORT: 3000
       }
     },
     {
@@ -60,8 +59,7 @@ module.exports = {
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'production',
-        PORT: 3010,
-        INTERNAL_API_TOKEN: process.env.INTERNAL_API_TOKEN || ''
+        PORT: 3010
       }
     },
     {
@@ -94,7 +92,6 @@ module.exports = {
         NODE_ENV: 'production',
         MOCKMAIL_FIFO_PATH: '/var/spool/email-processor',
         MOCKMAIL_DEBUG: 'true',
-        INTERNAL_API_TOKEN: process.env.INTERNAL_API_TOKEN || '',
         HML_API_PORT: '3010',
         PROD_API_PORT: '3000',
         HML_ENABLED: 'true',
