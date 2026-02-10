@@ -30,14 +30,13 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
-        INTERNAL_API_TOKEN: 'mockmail-internal-2026'
+        INTERNAL_API_TOKEN: process.env.INTERNAL_API_TOKEN || ''
       }
     },
     {
       name: 'mockmail-frontend',
       cwd: './frontend',
-      script: 'node_modules/.bin/next',
-      args: 'start -p 3001',
+      script: '.next/standalone/server.js',
       instances: 1,
       autorestart: true,
       watch: false,
@@ -62,14 +61,13 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3010,
-        INTERNAL_API_TOKEN: 'mockmail-internal-2026'
+        INTERNAL_API_TOKEN: process.env.INTERNAL_API_TOKEN || ''
       }
     },
     {
       name: 'mockmail-frontend-hml',
       cwd: './frontend',
-      script: 'node_modules/.bin/next',
-      args: 'start -p 3011',
+      script: '.next/standalone/server.js',
       instances: 1,
       autorestart: true,
       watch: false,
@@ -96,7 +94,7 @@ module.exports = {
         NODE_ENV: 'production',
         MOCKMAIL_FIFO_PATH: '/var/spool/email-processor',
         MOCKMAIL_DEBUG: 'true',
-        INTERNAL_API_TOKEN: 'mockmail-internal-2026',
+        INTERNAL_API_TOKEN: process.env.INTERNAL_API_TOKEN || '',
         HML_API_PORT: '3010',
         PROD_API_PORT: '3000',
         HML_ENABLED: 'true',

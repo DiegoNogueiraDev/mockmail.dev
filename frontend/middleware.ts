@@ -41,8 +41,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. Permitir rotas públicas
-  if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route))) {
+  // 2. Permitir rotas públicas (match exato ou com subpath via /)
+  if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
     return NextResponse.next();
   }
 
@@ -74,7 +74,7 @@ export function middleware(request: NextRequest) {
 
   // 7. Proteger rotas de API que acessam dados do sistema (logs, PM2, métricas)
   const PROTECTED_API_ROUTES = ['/api/chart-data', '/api/daily-stats', '/api/errors', '/api/metrics'];
-  if (PROTECTED_API_ROUTES.some(route => pathname.startsWith(route))) {
+  if (PROTECTED_API_ROUTES.some(route => pathname === route || pathname.startsWith(route + '/'))) {
     if (!accessToken) {
       return NextResponse.json(
         { error: 'Authentication required' },
@@ -85,7 +85,7 @@ export function middleware(request: NextRequest) {
   }
 
   // 8. Outras rotas de API que não são públicas
-  if (pathname.startsWith('/api/') && !PUBLIC_ROUTES.some(r => pathname.startsWith(r))) {
+  if (pathname.startsWith('/api/') && !PUBLIC_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))) {
     // API routes são protegidas pelo authMiddleware no backend
     return NextResponse.next();
   }

@@ -16,7 +16,10 @@ function LoginForm() {
   const { login } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/admin/dashboard';
+
+  // Validar callbackUrl: aceitar apenas paths relativos internos (previne open redirect)
+  const rawCallback = searchParams.get('callbackUrl') || '/admin/dashboard';
+  const callbackUrl = rawCallback.startsWith('/') && !rawCallback.startsWith('//') ? rawCallback : '/admin/dashboard';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
