@@ -310,6 +310,20 @@ export const createBox = async (req: Request, res: Response) => {
     // Invalidate user's boxes cache
     await invalidateUserBoxesCache(userId.toString());
 
+    // Disparar webhook para evento de caixa criada
+    try {
+      const { triggerWebhooks } = await import("../services/webhook.service");
+      const { WebhookEvent } = await import("../models/Webhook");
+      await triggerWebhooks(userId.toString(), WebhookEvent.BOX_CREATED, {
+        boxId: box._id.toString(),
+        address: box.address,
+        isCustom: box.isCustom,
+        expiresAt: box.expiresAt,
+      });
+    } catch (webhookError) {
+      logger.warn(`CONTROL-EMAILBOX - Failed to trigger webhooks: ${(webhookError as Error).message}`);
+    }
+
     const boxExpiresAt = new Date(box.expiresAt);
     const timeLeftMs = boxExpiresAt.getTime() - now.getTime();
     const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
@@ -393,6 +407,20 @@ export const deleteBox = async (req: Request, res: Response) => {
       `CONTROL-EMAILBOX - Deleted box ${box.address} and ${deletedCount} emails for user ${userId}. ` +
       `${archivedHistory ? `Archived to history: ${archivedHistory._id}` : 'No emails to archive'}`
     );
+
+    // Disparar webhook para evento de caixa excluída
+    try {
+      const { triggerWebhooks } = await import("../services/webhook.service");
+      const { WebhookEvent } = await import("../models/Webhook");
+      await triggerWebhooks(userId.toString(), WebhookEvent.BOX_DELETED, {
+        boxId: id,
+        address: box.address,
+        deletedEmails: deletedCount,
+        archived: !!archivedHistory,
+      });
+    } catch (webhookError) {
+      logger.warn(`CONTROL-EMAILBOX - Failed to trigger webhooks: ${(webhookError as Error).message}`);
+    }
 
     res.status(200).json({
       success: true,

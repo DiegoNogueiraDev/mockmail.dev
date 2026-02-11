@@ -11,13 +11,32 @@ import logger from "../utils/logger";
  */
 export const cleanupOrphanEmails = async (): Promise<number> => {
   try {
-    // Buscar todos os IDs de caixas existentes
-    const existingBoxIds = await EmailBox.distinct("_id");
+    // Usa aggregation com $lookup para encontrar emails órfãos no MongoDB server
+    // Evita carregar todos os IDs de boxes em memória (escala melhor)
+    const orphans = await Email.aggregate([
+      {
+        $lookup: {
+          from: "emailboxes",
+          localField: "emailBox",
+          foreignField: "_id",
+          as: "box",
+        },
+      },
+      {
+        $match: { box: { $size: 0 } },
+      },
+      {
+        $project: { _id: 1 },
+      },
+      {
+        $limit: 1000, // Processa em batches para não sobrecarregar
+      },
+    ]);
 
-    // Deletar emails cujo emailBox (ObjectId) não corresponde a nenhuma caixa existente
-    const result = await Email.deleteMany({
-      emailBox: { $nin: existingBoxIds }
-    });
+    if (orphans.length === 0) return 0;
+
+    const orphanIds = orphans.map((o) => o._id);
+    const result = await Email.deleteMany({ _id: { $in: orphanIds } });
 
     if (result.deletedCount > 0) {
       logger.info(`CLEANUP - ${result.deletedCount} emails órfãos removidos`);

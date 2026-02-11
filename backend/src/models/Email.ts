@@ -18,6 +18,11 @@ export interface IEmail extends Document {
   contentType: string;
   processedAt: Date;
   emailBox: mongoose.Types.ObjectId;
+  attachments: Array<{
+    filename: string;
+    contentType: string;
+    size: number;
+  }>;
 }
 
 const EmailSchema: Schema = new Schema(
@@ -38,6 +43,12 @@ const EmailSchema: Schema = new Schema(
     messageId: { type: String },
     contentType: { type: String, required: true },
     processedAt: { type: Date, default: Date.now },
+
+    attachments: [{
+      filename: { type: String },
+      contentType: { type: String },
+      size: { type: Number },
+    }],
 
     emailBox: {
       type: mongoose.Schema.Types.ObjectId,

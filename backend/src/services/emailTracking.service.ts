@@ -73,12 +73,13 @@ export class LogParser {
    */
   private async readProcessorLogs(emailAddress: string): Promise<LogEntry[]> {
     try {
+      // Lê logs do processador TypeScript (Winston)
       const logPath = path.join(this.logsPath, 'email_processor.log');
       const content = fs.readFileSync(logPath, 'utf-8');
       
       return content
         .split('\n')
-        .filter(line => line.includes(emailAddress) || line.includes('processado com sucesso'))
+        .filter(line => line.includes(emailAddress) || line.includes('Email processado com sucesso') || line.includes('Email persistido'))
         .map(line => this.parseLogLine(line))
         .filter(entry => entry !== null);
     } catch (error) {
@@ -149,28 +150,28 @@ export class LogParser {
     const receivedStep: EmailStep = {
       id: 'received',
       name: 'Email Received',
-      description: 'Email chegou no servidor MockMail',
+      description: 'Email chegou no servidor MockMail via Postfix',
       status: EmailStepStatus.SUCCESS,
       timestamp: emailData.date,
       duration: 0,
     };
     steps.push(receivedStep);
 
-    // Passo 2: Processamento no Gateway Python
-    const pythonProcessing = processorLogs.find(log => 
+    // Passo 2: Processamento pelo Email Processor (TypeScript/PM2)
+    const processorProcessing = processorLogs.find(log => 
       log.message.includes('processado com sucesso') && 
       log.message.includes(emailData.subject)
     );
 
-    const pythonStep: EmailStep = {
-      id: 'python_gateway',
-      name: 'Python Gateway Processing',
-      description: 'Processamento pelo gateway Python',
-      status: pythonProcessing ? EmailStepStatus.SUCCESS : EmailStepStatus.ERROR,
-      timestamp: pythonProcessing?.timestamp,
-      error: pythonProcessing ? undefined : 'Não encontrado nos logs do processador',
+    const processorStep: EmailStep = {
+      id: 'email_processor',
+      name: 'Email Processor',
+      description: 'Processamento pelo email processor (FIFO → API)',
+      status: processorProcessing ? EmailStepStatus.SUCCESS : EmailStepStatus.ERROR,
+      timestamp: processorProcessing?.timestamp,
+      error: processorProcessing ? undefined : 'Não encontrado nos logs do processador',
     };
-    steps.push(pythonStep);
+    steps.push(processorStep);
 
     // Passo 3: Processamento pela API
     const apiProcessingStep: EmailStep = {
@@ -186,21 +187,11 @@ export class LogParser {
     const databaseStep: EmailStep = {
       id: 'database_storage',
       name: 'Database Storage',
-      description: 'Armazenamento na base de dados',
+      description: 'Armazenamento na base de dados MongoDB',
       status: emailData.processed_at ? EmailStepStatus.SUCCESS : EmailStepStatus.PENDING,
       timestamp: emailData.processed_at,
     };
     steps.push(databaseStep);
-
-    // Passo 5: Indexação para pesquisa
-    const searchIndexStep: EmailStep = {
-      id: 'search_index',
-      name: 'Search Indexing',
-      description: 'Indexação para sistema de busca',
-      status: emailData.processed_at ? EmailStepStatus.SUCCESS : EmailStepStatus.WARNING,
-      timestamp: emailData.processed_at,
-    };
-    steps.push(searchIndexStep);
 
     // Determina o status atual baseado nos passos
     const currentStatus = this.determineCurrentStatus(steps);

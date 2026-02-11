@@ -4,7 +4,12 @@
 Sistema de email temporário: API + Dashboard + Processador de emails.
 
 # Memory
-Consulte sempre o context-hub para redução de contexto.
+**OBRIGATÓRIO**: Antes de qualquer tarefa (code, debug, pesquisa, planejamento), consulte o context-hub:
+1. `context_pack` com o goal da tarefa para obter contexto compacto
+2. `memory_search` para buscar informações específicas já salvas
+3. Memórias Serena (`read_memory`) para estrutura e arquitetura
+
+Escopo padrão no context-hub: `mockmail`
 
 ## Estrutura
 ```

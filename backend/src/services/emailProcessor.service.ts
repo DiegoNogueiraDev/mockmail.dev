@@ -25,6 +25,11 @@ interface ParsedEmailData {
   contentType: string;
   body: string;
   processedAt: string;
+  attachments: Array<{
+    filename: string;
+    contentType: string;
+    size: number;
+  }>;
 }
 
 /**
@@ -39,6 +44,12 @@ async function parseRawEmail(rawEmail: string): Promise<ParsedEmailData> {
       ? parsed.to[0]?.value?.[0]?.address || ""
       : parsed.to?.value?.[0]?.address || "";
 
+    const attachments = (parsed.attachments || []).map(att => ({
+      filename: att.filename || "unnamed",
+      contentType: att.contentType || "application/octet-stream",
+      size: att.size || 0,
+    }));
+
     const emailData: ParsedEmailData = {
       id: parsed.messageId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       subject: parsed.subject || "(sem assunto)",
@@ -48,6 +59,7 @@ async function parseRawEmail(rawEmail: string): Promise<ParsedEmailData> {
       contentType: parsed.html ? "text/html" : "text/plain",
       body: parsed.html || parsed.text || "",
       processedAt: new Date().toISOString(),
+      attachments,
     };
 
     logger.info(`EMAIL-PROCESSOR - Email parseado: ${emailData.subject}`);
@@ -158,6 +170,20 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
         emailBox = await findOrCreateEmailBox(to, senderUser._id.toString());
         userId = senderUser._id.toString();
         logger.info(`EMAIL-PROCESSOR - Caixa ${to} criada com sucesso!`);
+
+        // Disparar webhook para evento de caixa criada
+        try {
+          const { triggerWebhooks } = await import("./webhook.service");
+          const { WebhookEvent } = await import("../models/Webhook");
+          await triggerWebhooks(userId, WebhookEvent.BOX_CREATED, {
+            boxId: emailBox._id.toString(),
+            address: emailBox.address,
+            isCustom: emailBox.isCustom || false,
+            expiresAt: emailBox.expiresAt,
+          });
+        } catch (webhookError) {
+          logger.warn(`EMAIL-PROCESSOR - Falha ao disparar webhook BOX_CREATED: ${(webhookError as Error).message}`);
+        }
       } else {
         // PRIORIDADE 3: Nem TO nem FROM existem - descartar e logar detalhadamente
         logger.warn(
@@ -210,18 +236,36 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
       content_type: emailData.contentType,
       processed_at: emailData.processedAt,
       emailBox: emailBox._id,
+      attachments: emailData.attachments,
     });
 
     logger.info(`EMAIL-PROCESSOR - Email persistido: ${savedEmail._id} para ${to}`);
 
     // Invalidar cache do usuário para refletir novo email
     try {
-      const { invalidateUserEmailsCache, invalidateUserBoxesCache } = await import("./cache.service");
+      const { invalidateUserEmailsCache, invalidateUserBoxesCache, invalidateBoxEmailsCache } = await import("./cache.service");
       await invalidateUserEmailsCache(userId);
       await invalidateUserBoxesCache(userId);
-      logger.debug(`EMAIL-PROCESSOR - Cache invalidado para usuário ${userId}`);
+      await invalidateBoxEmailsCache(emailBox._id.toString());
+      logger.debug(`EMAIL-PROCESSOR - Cache invalidado para usuário ${userId} e box ${emailBox._id}`);
     } catch (cacheError) {
       logger.warn(`EMAIL-PROCESSOR - Falha ao invalidar cache: ${(cacheError as Error).message}`);
+    }
+
+    // Disparar webhooks para evento de email recebido
+    try {
+      const { triggerWebhooks } = await import("./webhook.service");
+      const { WebhookEvent } = await import("../models/Webhook");
+      await triggerWebhooks(userId, WebhookEvent.EMAIL_RECEIVED, {
+        emailId: savedEmail._id.toString(),
+        from,
+        to,
+        subject: emailData.subject,
+        date: emailData.date,
+        boxId: emailBox._id.toString(),
+      });
+    } catch (webhookError) {
+      logger.warn(`EMAIL-PROCESSOR - Falha ao disparar webhooks: ${(webhookError as Error).message}`);
     }
 
     // Salva cópia em JSON para backup
@@ -258,7 +302,11 @@ async function readFromFifoContinuous(): Promise<void> {
   
   let buffer = "";
 
-  stream.on("data", async (chunk: Buffer | string) => {
+  // Promise chain garante processamento sequencial entre chunks
+  // Evita race condition quando múltiplos chunks chegam antes do anterior terminar
+  let processing = Promise.resolve();
+
+  stream.on("data", (chunk: Buffer | string) => {
     const data = chunk.toString();
     logger.debug(`EMAIL-PROCESSOR - Recebidos ${data.length} bytes`);
     
@@ -269,18 +317,20 @@ async function readFromFifoContinuous(): Promise<void> {
     const parts = buffer.split(/\n\n\n/); // Três quebras = separador entre emails
     
     if (parts.length > 1) {
-      // Processa todos os emails completos
+      // Enfileira processamento sequencial de todos os emails completos
       for (let i = 0; i < parts.length - 1; i++) {
         const emailRaw = parts[i].trim();
         if (emailRaw) {
-          try {
-            logger.info(`EMAIL-PROCESSOR - Processando email (${emailRaw.length} bytes)`);
-            const emailData = await parseRawEmail(emailRaw);
-            await processAndPersistEmail(emailData);
-            logger.info(`EMAIL-PROCESSOR - Email processado com sucesso`);
-          } catch (error) {
-            logger.error(`EMAIL-PROCESSOR - Erro no processamento: ${(error as Error).message}`);
-          }
+          processing = processing.then(async () => {
+            try {
+              logger.info(`EMAIL-PROCESSOR - Processando email (${emailRaw.length} bytes)`);
+              const emailData = await parseRawEmail(emailRaw);
+              await processAndPersistEmail(emailData);
+              logger.info(`EMAIL-PROCESSOR - Email processado com sucesso`);
+            } catch (error) {
+              logger.error(`EMAIL-PROCESSOR - Erro no processamento: ${(error as Error).message}`);
+            }
+          });
         }
       }
       // Mantém a última parte (incompleta) no buffer
@@ -288,22 +338,25 @@ async function readFromFifoContinuous(): Promise<void> {
     }
   });
 
-  stream.on("end", async () => {
-    // Processa qualquer email restante no buffer antes de reabrir
-    if (buffer.trim()) {
-      try {
-        logger.info(`EMAIL-PROCESSOR - Processando email pendente (${buffer.length} bytes)`);
-        const emailData = await parseRawEmail(buffer);
-        await processAndPersistEmail(emailData);
-        logger.info(`EMAIL-PROCESSOR - Email processado com sucesso`);
-        buffer = "";
-      } catch (error) {
-        logger.error(`EMAIL-PROCESSOR - Erro no processamento: ${(error as Error).message}`);
+  stream.on("end", () => {
+    // Aguarda fila terminar, depois processa buffer restante e reabre
+    processing = processing.then(async () => {
+      if (buffer.trim()) {
+        try {
+          logger.info(`EMAIL-PROCESSOR - Processando email pendente (${buffer.length} bytes)`);
+          const emailData = await parseRawEmail(buffer);
+          await processAndPersistEmail(emailData);
+          logger.info(`EMAIL-PROCESSOR - Email processado com sucesso`);
+          buffer = "";
+        } catch (error) {
+          logger.error(`EMAIL-PROCESSOR - Erro no processamento: ${(error as Error).message}`);
+        }
       }
-    }
-    logger.warn(`EMAIL-PROCESSOR - Stream do FIFO encerrado, reabrindo...`);
-    setTimeout(() => readFromFifoContinuous(), 1000);
+      logger.warn(`EMAIL-PROCESSOR - Stream do FIFO encerrado, reabrindo...`);
+      setTimeout(() => readFromFifoContinuous(), 1000);
+    });
   });
+
   stream.on("error", (error) => {
     logger.error(`EMAIL-PROCESSOR - Erro no stream do FIFO: ${error.message}`);
     // Reabrir após erro

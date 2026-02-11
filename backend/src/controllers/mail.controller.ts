@@ -142,6 +142,23 @@ export const processMail = async (req: Request, res: Response) => {
       throw new Error("Internal server error while processing email box.");
     }
 
+    // Verificar limite diário ANTES de salvar o email
+    try {
+      const { incrementUserDailyUsage } = await import("../middlewares/dailyUserLimit");
+      const hasQuota = await incrementUserDailyUsage(user.id);
+      if (!hasQuota) {
+        logger.warn(
+          `CONTROL-MAIL - Usuário ${user.id} excedeu limite diário. Email rejeitado: FROM=${from}, TO=${to}`
+        );
+        return res.status(429).json({
+          message: "Daily usage limit exceeded.",
+        });
+      }
+    } catch (usageError) {
+      // fail-open: se falhar ao verificar limite, permite o email
+      logger.warn(`CONTROL-MAIL - Failed to check daily usage: ${(usageError as Error).message}`);
+    }
+
     // Generate token
     const token = extractTokenSubject(subject);
 
@@ -183,6 +200,24 @@ export const processMail = async (req: Request, res: Response) => {
         `CONTROL-MAIL - Failed to invalidate cache: ${(cacheError as Error).message}`
       );
       // Don't fail the request if cache invalidation fails
+    }
+
+    // Disparar webhooks para evento de email recebido
+    try {
+      const { triggerWebhooks } = await import("../services/webhook.service");
+      const { WebhookEvent } = await import("../models/Webhook");
+      await triggerWebhooks(user.id, WebhookEvent.EMAIL_RECEIVED, {
+        emailId: email._id.toString(),
+        from,
+        to,
+        subject,
+        date,
+        boxId: emailBox.id,
+      });
+    } catch (webhookError) {
+      logger.warn(
+        `CONTROL-MAIL - Failed to trigger webhooks: ${(webhookError as Error).message}`
+      );
     }
 
     logger.info(
@@ -392,6 +427,7 @@ export const getEmailById = async (req: Request, res: Response) => {
         contentType: email.contentType,
         processedAt: email.processedAt,
         boxAddress: email.to,
+        attachments: (email as any).attachments || [],
       },
     });
   } catch (error) {
