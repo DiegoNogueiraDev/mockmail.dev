@@ -5,16 +5,16 @@ export interface IEmail extends Document {
   to: string;
   subject: string;
   body: {
-    rawHtml: string; // HTML bruto, incluindo CSS, scripts, e metadados.
-    plainText: string; // Texto limpo extraído do HTML.
+    rawHtml: string;
+    plainText: string;
     metadata: {
-      links: string[]; // Links extraídos do HTML.
-      images: string[]; // URLs de imagens extraídas.
+      links: string[];
+      images: string[];
     };
   };
   date: Date;
   token: string;
-  messageId: string; // Message-ID do email (RFC 2822) - usado para deduplicação
+  messageId: string;
   contentType: string;
   processedAt: Date;
   emailBox: mongoose.Types.ObjectId;
@@ -22,7 +22,22 @@ export interface IEmail extends Document {
     filename: string;
     contentType: string;
     size: number;
+    content?: Buffer;
   }>;
+  readAt?: Date;
+  // Tracking fields
+  openedAt?: Date;
+  openCount: number;
+  clickCount: number;
+  clicks: Array<{
+    url: string;
+    clickedAt: Date;
+  }>;
+  headers?: Record<string, string>;
+  // Threading fields
+  inReplyTo?: string;
+  references?: string[];
+  threadId?: string;
 }
 
 const EmailSchema: Schema = new Schema(
@@ -48,6 +63,7 @@ const EmailSchema: Schema = new Schema(
       filename: { type: String },
       contentType: { type: String },
       size: { type: Number },
+      content: { type: Buffer },
     }],
 
     emailBox: {
@@ -55,9 +71,28 @@ const EmailSchema: Schema = new Schema(
       ref: "EmailBox",
       required: true,
     },
+
+    readAt: { type: Date, default: null },
+
+    // Tracking fields
+    openedAt: { type: Date, default: null },
+    openCount: { type: Number, default: 0 },
+    clickCount: { type: Number, default: 0 },
+    clicks: [{
+      url: { type: String },
+      clickedAt: { type: Date },
+    }],
+
+    // SMTP headers
+    headers: { type: Map, of: String },
+
+    // Threading fields
+    inReplyTo: { type: String },
+    references: [{ type: String }],
+    threadId: { type: String, index: true },
   },
   { timestamps: true }
-);
+);;;;;;;
 
 // Índice único sparse no messageId para deduplicação
 // sparse: ignora documentos onde messageId é null/undefined

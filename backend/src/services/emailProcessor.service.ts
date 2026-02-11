@@ -5,7 +5,8 @@ import logger from "../utils/logger";
 import { saveEmail } from "./email.service";
 import { findEmailBoxByAddress, findOrCreateEmailBox } from "./emailBox.service";
 import { extractEmail, extractTokenSubject } from "../utils/emailParser";
-import { parseBody } from "../utils/bodyParser";
+import { parseBody, rewriteLinks } from "../utils/bodyParser";
+import Email from "../models/Email";
 import User from "../models/User";
 import { incrementUserDailyUsage } from "../middlewares/dailyUserLimit";
 import EmailBox from "../models/EmailBox";
@@ -29,7 +30,12 @@ interface ParsedEmailData {
     filename: string;
     contentType: string;
     size: number;
+    content?: Buffer;
   }>;
+  headers?: Record<string, string>;
+  // Threading fields
+  inReplyTo?: string;
+  references?: string[];
 }
 
 /**
@@ -48,7 +54,31 @@ async function parseRawEmail(rawEmail: string): Promise<ParsedEmailData> {
       filename: att.filename || "unnamed",
       contentType: att.contentType || "application/octet-stream",
       size: att.size || 0,
+      content: att.content,
     }));
+
+    // Extrair headers SMTP relevantes
+    const headers: Record<string, string> = {};
+    if (parsed.headers) {
+      const interestingHeaders = [
+        'return-path', 'received', 'dkim-signature', 'authentication-results',
+        'received-spf', 'x-mailer', 'x-originating-ip', 'reply-to',
+        'list-unsubscribe', 'mime-version', 'content-transfer-encoding',
+        'x-spam-status', 'x-spam-score', 'arc-seal',
+      ];
+      for (const [key, value] of parsed.headers) {
+        const lowerKey = key.toLowerCase();
+        if (interestingHeaders.includes(lowerKey) || lowerKey.startsWith('x-')) {
+          headers[key] = typeof value === 'string' ? value : JSON.stringify(value);
+        }
+      }
+    }
+
+    // Extrair campos de threading
+    const inReplyTo = parsed.inReplyTo || undefined;
+    const references = Array.isArray(parsed.references)
+      ? parsed.references
+      : parsed.references ? [parsed.references] : [];
 
     const emailData: ParsedEmailData = {
       id: parsed.messageId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -60,6 +90,9 @@ async function parseRawEmail(rawEmail: string): Promise<ParsedEmailData> {
       body: parsed.html || parsed.text || "",
       processedAt: new Date().toISOString(),
       attachments,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      inReplyTo,
+      references: references.length > 0 ? references : undefined,
     };
 
     logger.info(`EMAIL-PROCESSOR - Email parseado: ${emailData.subject}`);
@@ -220,6 +253,20 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
       logger.warn(`EMAIL-PROCESSOR - Falha ao verificar uso diário: ${(usageError as Error).message}`);
     }
 
+    // Calcular threadId para agrupamento de conversas
+    let threadId = emailData.id; // Por default, email é sua própria thread
+    if (emailData.inReplyTo) {
+      const parent = await Email.findOne({ messageId: emailData.inReplyTo }).select('threadId').lean();
+      if (parent) {
+        threadId = (parent as any).threadId || emailData.inReplyTo;
+      }
+    } else if (emailData.references && emailData.references.length > 0) {
+      const root = await Email.findOne({ messageId: emailData.references[0] }).select('threadId').lean();
+      if (root) {
+        threadId = (root as any).threadId || emailData.references[0];
+      }
+    }
+
     // Salva o email no MongoDB
     const savedEmail = await saveEmail({
       from,
@@ -237,9 +284,31 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
       processed_at: emailData.processedAt,
       emailBox: emailBox._id,
       attachments: emailData.attachments,
+      headers: emailData.headers,
+      inReplyTo: emailData.inReplyTo,
+      references: emailData.references,
+      threadId,
     });
 
     logger.info(`EMAIL-PROCESSOR - Email persistido: ${savedEmail._id} para ${to}`);
+
+    // Inject tracking pixel and rewrite links
+    try {
+      const baseUrl = process.env.TRACKING_BASE_URL || "https://mockmail.dev";
+      const emailIdStr = savedEmail._id.toString();
+      let trackedHtml = parsedBody.rawHtml;
+      trackedHtml = rewriteLinks(trackedHtml, emailIdStr, baseUrl);
+      const pixelTag = `<img src="${baseUrl}/api/mail/track/open/${emailIdStr}" width="1" height="1" style="display:none" alt="" />`;
+      if (trackedHtml.includes("</body>")) {
+        trackedHtml = trackedHtml.replace("</body>", `${pixelTag}</body>`);
+      } else {
+        trackedHtml += pixelTag;
+      }
+      await Email.updateOne({ _id: emailIdStr }, { "body.rawHtml": trackedHtml });
+      logger.info(`EMAIL-PROCESSOR - Tracking injected for email ${emailIdStr}`);
+    } catch (trackError) {
+      logger.warn(`EMAIL-PROCESSOR - Failed to inject tracking: ${(trackError as Error).message}`);
+    }
 
     // Invalidar cache do usuário para refletir novo email
     try {
@@ -266,6 +335,58 @@ async function processAndPersistEmail(emailData: ParsedEmailData): Promise<void>
       });
     } catch (webhookError) {
       logger.warn(`EMAIL-PROCESSOR - Falha ao disparar webhooks: ${(webhookError as Error).message}`);
+    }
+
+    // Notificar usuário por email real (se configurado)
+    try {
+      const { notifyEmailReceived } = await import("./notification.service");
+      notifyEmailReceived(userId, {
+        from,
+        to,
+        subject: emailData.subject,
+        date: emailData.date,
+      }).catch(err => {
+        logger.warn(`EMAIL-PROCESSOR - Notification error: ${err.message}`);
+      });
+    } catch (notifError) {
+      logger.warn(`EMAIL-PROCESSOR - Notification import failed: ${(notifError as Error).message}`);
+    }
+
+    // Verificar regras de auto-forward
+    try {
+      const ForwardRule = (await import("../models/ForwardRule")).default;
+      const rules = await ForwardRule.find({
+        emailBoxId: emailBox._id,
+        active: true,
+      });
+
+      for (const rule of rules) {
+        if (rule.filterFrom && !from.includes(rule.filterFrom)) continue;
+        if (rule.filterSubject) {
+          const regex = new RegExp(rule.filterSubject, "i");
+          if (!regex.test(emailData.subject)) continue;
+        }
+
+        const { forwardEmail } = await import("./mailer.service");
+        forwardEmail({
+          originalFrom: from,
+          originalTo: to,
+          originalSubject: emailData.subject,
+          htmlBody: parsedBody.rawHtml,
+          textBody: parsedBody.plainText,
+          forwardTo: rule.forwardTo,
+          forwardedBy: "auto-forward",
+        }).then(() => {
+          ForwardRule.findByIdAndUpdate(rule._id, {
+            $inc: { forwardCount: 1 },
+            $set: { lastForwardedAt: new Date() },
+          }).exec();
+        }).catch(err => {
+          logger.warn(`EMAIL-PROCESSOR - Auto-forward error: ${err.message}`);
+        });
+      }
+    } catch (fwdError) {
+      logger.warn(`EMAIL-PROCESSOR - Auto-forward check failed: ${(fwdError as Error).message}`);
     }
 
     // Salva cópia em JSON para backup

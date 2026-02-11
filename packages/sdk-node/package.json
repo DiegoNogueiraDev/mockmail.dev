@@ -1,0 +1,17 @@
+{
+  "name": "@mockmail/sdk",
+  "version": "1.0.0",
+  "description": "Official MockMail.dev SDK for Node.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["mockmail", "email", "testing", "temporary-email", "sdk"],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

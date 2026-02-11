@@ -10,6 +10,7 @@ import {
   testWebhook,
   regenerateSecret,
   getDeliveries,
+  retryDelivery,
   getAvailableEvents,
 } from "../controllers/webhook.controller";
 
@@ -44,5 +45,8 @@ router.post("/:id/regenerate-secret", strictLimiter, regenerateSecret);
 
 // Get delivery history
 router.get("/:id/deliveries", getDeliveries);
+
+// Retry a failed delivery
+router.post("/:id/deliveries/:deliveryId/retry", strictLimiter, retryDelivery);
 
 export default router;

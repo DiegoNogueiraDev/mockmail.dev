@@ -58,12 +58,20 @@ export default function BoxesPage() {
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [clearingId, setClearingId] = useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const pageRef = useRef(1);
+  const searchRef = useRef('');
+
+  // Debounce do searchTerm (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // Modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -83,7 +91,8 @@ export default function BoxesPage() {
   });
 
   // Fetch inicial ou refresh - reseta a lista
-  const fetchBoxes = useCallback(async () => {
+  const fetchBoxes = useCallback(async (search?: string) => {
+    const searchParam = search ?? searchRef.current;
     setLoading(true);
     setError(null);
     setIsInitialLoad(true);
@@ -91,7 +100,8 @@ export default function BoxesPage() {
     setPage(1);
 
     try {
-      const response = await api.get<BoxesData>(`/api/boxes?page=1&limit=20`);
+      const qs = searchParam ? `&search=${encodeURIComponent(searchParam)}` : '';
+      const response = await api.get<BoxesData>(`/api/boxes?page=1&limit=20${qs}`);
       if (response.success) {
         const apiResponse = response as unknown as { success: boolean; data: EmailBox[]; pagination: { totalPages: number } };
         setBoxes(apiResponse.data || []);
@@ -105,12 +115,20 @@ export default function BoxesPage() {
     }
   }, []);
 
+  // Re-fetch quando busca muda (debounced)
+  useEffect(() => {
+    searchRef.current = debouncedSearch;
+    fetchBoxes(debouncedSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
+
   // Fetch para carregar mais itens (infinite scroll)
   const loadMoreBoxes = useCallback(async () => {
     const nextPage = pageRef.current + 1;
 
     try {
-      const response = await api.get<BoxesData>(`/api/boxes?page=${nextPage}&limit=20`);
+      const qs = searchRef.current ? `&search=${encodeURIComponent(searchRef.current)}` : '';
+      const response = await api.get<BoxesData>(`/api/boxes?page=${nextPage}&limit=20${qs}`);
       if (response.success) {
         const apiResponse = response as unknown as { success: boolean; data: EmailBox[]; pagination: { totalPages: number } };
         setBoxes(prev => [...prev, ...(apiResponse.data || [])]);
@@ -129,11 +147,6 @@ export default function BoxesPage() {
     page < totalPages,
     { threshold: 200, disabled: loading || isInitialLoad }
   );
-
-  useEffect(() => {
-    fetchBoxes();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const handleCopyAddress = async (address: string, id: string) => {
     try {
@@ -198,10 +211,6 @@ export default function BoxesPage() {
     });
   };
 
-  const filteredBoxes = boxes.filter((box) =>
-    box.address.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const closeModal = () => {
     setConfirmModal(prev => ({ ...prev, isOpen: false }));
   };
@@ -232,7 +241,7 @@ export default function BoxesPage() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={fetchBoxes}
+            onClick={() => fetchBoxes()}
             disabled={loading}
             className="btn-secondary btn-sm flex items-center gap-2"
             data-testid="refresh-boxes-button"
@@ -282,7 +291,7 @@ export default function BoxesPage() {
           <div className="p-4">
             <SkeletonBoxesList count={6} />
           </div>
-        ) : filteredBoxes.length === 0 ? (
+        ) : boxes.length === 0 ? (
           <div className="empty-state py-16">
             <Inbox className="empty-state-icon" />
             <p className="empty-state-title">
@@ -303,7 +312,7 @@ export default function BoxesPage() {
         ) : (
           <div className="divide-y divide-gray-100">
             {/* Caixas Ativas */}
-            {filteredBoxes.filter(box => !box.expired).map((box) => (
+            {boxes.filter(box => !box.expired).map((box) => (
               <div
                 key={box.id}
                 className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors"
@@ -402,7 +411,7 @@ export default function BoxesPage() {
             ))}
 
             {/* Divisor - Caixas Expiradas */}
-            {filteredBoxes.some(box => box.expired) && (
+            {boxes.some(box => box.expired) && (
               <div className="relative py-4" data-testid="expired-divider">
                 <div className="absolute inset-0 flex items-center px-4">
                   <div className="w-full border-t-2 border-orange-200"></div>
@@ -410,14 +419,14 @@ export default function BoxesPage() {
                 <div className="relative flex justify-center">
                   <span className="bg-white px-4 py-1 text-sm font-medium text-orange-600 flex items-center gap-2 rounded-full border border-orange-200">
                     <Clock className="w-4 h-4" />
-                    Caixas Expiradas ({filteredBoxes.filter(box => box.expired).length})
+                    Caixas Expiradas ({boxes.filter(box => box.expired).length})
                   </span>
                 </div>
               </div>
             )}
 
             {/* Caixas Expiradas */}
-            {filteredBoxes.filter(box => box.expired).map((box) => (
+            {boxes.filter(box => box.expired).map((box) => (
               <div
                 key={box.id}
                 className="flex items-center gap-4 p-4 hover:bg-orange-50/50 transition-colors opacity-75 bg-orange-50/30"

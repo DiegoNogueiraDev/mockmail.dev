@@ -19,6 +19,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ApiPlayground from '@/components/ApiPlayground';
 
 // Componente para bloco de código
 function CodeBlock({ code, language = 'bash' }: { code: string; language?: string }) {
@@ -102,12 +103,26 @@ function Endpoint({
   response?: string;
   example?: string;
 }) {
+  const [showPlayground, setShowPlayground] = useState(false);
   const methodColors = {
     GET: 'bg-emerald-100 text-emerald-700',
     POST: 'bg-blue-100 text-blue-700',
     PUT: 'bg-amber-100 text-amber-700',
     DELETE: 'bg-red-100 text-red-700',
   };
+
+  // Parse body JSON to extract field schema for playground
+  const bodySchema = body ? (() => {
+    try {
+      const parsed = JSON.parse(body);
+      return Object.entries(parsed).map(([name, value]) => ({
+        name,
+        type: typeof value === 'number' ? 'number' : 'string',
+        required: false,
+        description: name,
+      }));
+    } catch { return undefined; }
+  })() : undefined;
 
   return (
     <div className="border border-gray-100 rounded-lg p-4 space-y-3">
@@ -135,6 +150,23 @@ function Endpoint({
         <div>
           <p className="text-xs font-semibold text-gray-500 mb-1">Exemplo:</p>
           <CodeBlock code={example} language="bash" />
+        </div>
+      )}
+      {auth !== 'Nenhuma' && (
+        <div>
+          <button
+            onClick={() => setShowPlayground(!showPlayground)}
+            className="text-xs text-[#5636d1] hover:underline font-medium"
+          >
+            {showPlayground ? 'Fechar Playground' : 'Testar no Playground'}
+          </button>
+          {showPlayground && (
+            <ApiPlayground
+              method={method as any}
+              path={path}
+              bodySchema={bodySchema}
+            />
+          )}
         </div>
       )}
     </div>

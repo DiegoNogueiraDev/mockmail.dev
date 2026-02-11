@@ -97,6 +97,7 @@ export default function WebhookDetailPage() {
   const [togglingStatus, setTogglingStatus] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [showSecret, setShowSecret] = useState(false);
+  const [retryingDeliveryId, setRetryingDeliveryId] = useState<string | null>(null);
 
   const fetchWebhook = async () => {
     setLoading(true);
@@ -210,6 +211,27 @@ export default function WebhookDetailPage() {
       toast.error('Erro ao excluir webhook');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleRetryDelivery = async (deliveryId: string) => {
+    setRetryingDeliveryId(deliveryId);
+    try {
+      const response = await api.post<{ retried: boolean; deliverySuccess: boolean }>(
+        `/api/webhooks/${webhookId}/deliveries/${deliveryId}/retry`
+      );
+      if (response.success && response.data?.deliverySuccess) {
+        toast.success('Entrega reenviada com sucesso!');
+      } else if (response.success) {
+        toast.error('Reenvio falhou novamente');
+      } else {
+        toast.error(response.message || 'Erro ao reenviar');
+      }
+      fetchWebhook();
+    } catch {
+      toast.error('Erro ao reenviar entrega');
+    } finally {
+      setRetryingDeliveryId(null);
     }
   };
 
@@ -499,6 +521,19 @@ export default function WebhookDetailPage() {
                     <p className="text-xs text-red-600 mt-1 truncate">{delivery.error}</p>
                   )}
                 </div>
+
+                {/* Retry button for failed deliveries */}
+                {!delivery.success && (
+                  <button
+                    onClick={() => handleRetryDelivery(delivery._id)}
+                    disabled={retryingDeliveryId === delivery._id}
+                    className="btn-secondary btn-sm flex items-center gap-1.5 flex-shrink-0"
+                    title="Reenviar entrega"
+                  >
+                    <RotateCw className={`w-3.5 h-3.5 ${retryingDeliveryId === delivery._id ? 'animate-spin' : ''}`} />
+                    Retry
+                  </button>
+                )}
               </div>
             ))}
           </div>

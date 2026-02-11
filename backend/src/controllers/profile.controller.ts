@@ -45,6 +45,11 @@ export const getProfile = async (req: Request, res: Response) => {
         createdAt: user.createdAt,
         lastLogin: user.lastLogin,
         stats,
+        notifications: (user as any).notifications || {
+          emailOnReceive: false,
+          emailOnBoxExpire: false,
+          digestFrequency: 'off',
+        },
       },
     });
   } catch (error) {
@@ -54,7 +59,7 @@ export const getProfile = async (req: Request, res: Response) => {
       error: "Erro ao obter perfil",
     });
   }
-};
+};;
 
 /**
  * Update user profile (name)
@@ -114,6 +119,36 @@ export const updateProfile = async (req: Request, res: Response) => {
       success: false,
       error: errorMsg,
     });
+  }
+};
+
+export const updateNotifications = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Não autenticado" });
+    }
+
+    const { emailOnReceive, emailOnBoxExpire, digestFrequency } = req.body;
+    const validFreqs = ['instant', 'hourly', 'daily', 'off'];
+
+    const update: any = {};
+    if (typeof emailOnReceive === 'boolean') update['notifications.emailOnReceive'] = emailOnReceive;
+    if (typeof emailOnBoxExpire === 'boolean') update['notifications.emailOnBoxExpire'] = emailOnBoxExpire;
+    if (digestFrequency && validFreqs.includes(digestFrequency)) update['notifications.digestFrequency'] = digestFrequency;
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ success: false, error: "Nenhum campo válido" });
+    }
+
+    const User = (await import("../models/User")).default;
+    await User.updateOne({ _id: userId }, { $set: update });
+
+    logger.info(`CONTROL-PROFILE - Notificações atualizadas para user ${userId}`);
+    res.json({ success: true, message: "Notificações atualizadas" });
+  } catch (error) {
+    logger.error(`CONTROL-PROFILE - Erro ao atualizar notificações: ${(error as Error).message}`);
+    res.status(500).json({ success: false, error: "Erro ao atualizar notificações" });
   }
 };
 

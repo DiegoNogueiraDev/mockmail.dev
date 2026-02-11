@@ -16,6 +16,11 @@ import {
   Check,
   Eraser,
   ExternalLink,
+  Search,
+  Forward,
+  Plus,
+  Power,
+  X,
 } from 'lucide-react';
 import { SkeletonBoxHeader, SkeletonEmailsList, SkeletonLoadingMore } from '@/components/SkeletonLoader';
 import toast from 'react-hot-toast';
@@ -36,7 +41,15 @@ interface Email {
   read: boolean;
 }
 
-// Interface removida - API retorna data e pagination no nível raiz
+interface ForwardRule {
+  id: string;
+  forwardTo: string;
+  active: boolean;
+  filterFrom?: string;
+  filterSubject?: string;
+  forwardCount: number;
+  lastForwardedAt?: string;
+}
 
 export default function BoxDetailPage() {
   const params = useParams();
@@ -54,7 +67,21 @@ export default function BoxDetailPage() {
   const [clearing, setClearing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [forwardRules, setForwardRules] = useState<ForwardRule[]>([]);
+  const [showAddRule, setShowAddRule] = useState(false);
+  const [newRuleEmail, setNewRuleEmail] = useState('');
+  const [newRuleFilterFrom, setNewRuleFilterFrom] = useState('');
+  const [newRuleFilterSubject, setNewRuleFilterSubject] = useState('');
   const pageRef = useRef(1);
+  const searchRef = useRef('');
+
+  // Debounce do searchTerm (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   const fetchBox = async () => {
     try {
@@ -70,14 +97,16 @@ export default function BoxDetailPage() {
   };
 
   // Fetch inicial ou refresh - reseta a lista de emails
-  const fetchEmails = useCallback(async () => {
+  const fetchEmails = useCallback(async (search?: string) => {
+    const searchParam = search ?? searchRef.current;
     setEmailsLoading(true);
     setIsInitialLoad(true);
     pageRef.current = 1;
     setPage(1);
 
     try {
-      const response = await api.get<Email[]>(`/api/boxes/${boxId}/emails?page=1&limit=20`);
+      const qs = searchParam ? `&search=${encodeURIComponent(searchParam)}` : '';
+      const response = await api.get<Email[]>(`/api/boxes/${boxId}/emails?page=1&limit=20${qs}`);
       const apiResponse = response as unknown as { success: boolean; data: Email[]; pagination: { totalPages: number } };
 
       if (apiResponse.success) {
@@ -92,12 +121,22 @@ export default function BoxDetailPage() {
     }
   }, [boxId]);
 
+  // Re-fetch quando busca muda (debounced)
+  useEffect(() => {
+    searchRef.current = debouncedSearch;
+    if (box) {
+      fetchEmails(debouncedSearch);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
+
   // Fetch para carregar mais emails (infinite scroll)
   const loadMoreEmails = useCallback(async () => {
     const nextPage = pageRef.current + 1;
 
     try {
-      const response = await api.get<Email[]>(`/api/boxes/${boxId}/emails?page=${nextPage}&limit=20`);
+      const qs = searchRef.current ? `&search=${encodeURIComponent(searchRef.current)}` : '';
+      const response = await api.get<Email[]>(`/api/boxes/${boxId}/emails?page=${nextPage}&limit=20${qs}`);
       const apiResponse = response as unknown as { success: boolean; data: Email[]; pagination: { totalPages: number } };
 
       if (apiResponse.success) {
@@ -123,6 +162,7 @@ export default function BoxDetailPage() {
       setLoading(true);
       await fetchBox();
       await fetchEmails();
+      fetchForwardRules();
       setLoading(false);
     };
     loadData();
@@ -185,6 +225,56 @@ export default function BoxDetailPage() {
       toast.error('Erro ao excluir caixa');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const fetchForwardRules = async () => {
+    try {
+      const response = await api.get<ForwardRule[]>(`/api/boxes/${boxId}/forward-rules`);
+      const result = response as unknown as { success: boolean; data: ForwardRule[] };
+      if (result.success) setForwardRules(result.data || []);
+    } catch { /* silent */ }
+  };
+
+  const handleAddRule = async () => {
+    if (!newRuleEmail) return;
+    try {
+      const response = await api.post(`/api/boxes/${boxId}/forward-rules`, {
+        forwardTo: newRuleEmail,
+        filterFrom: newRuleFilterFrom || undefined,
+        filterSubject: newRuleFilterSubject || undefined,
+      });
+      if (response.success) {
+        toast.success('Regra criada');
+        setShowAddRule(false);
+        setNewRuleEmail('');
+        setNewRuleFilterFrom('');
+        setNewRuleFilterSubject('');
+        fetchForwardRules();
+      } else {
+        toast.error((response as any).message || 'Erro ao criar regra');
+      }
+    } catch {
+      toast.error('Erro ao criar regra');
+    }
+  };
+
+  const handleToggleRule = async (ruleId: string, active: boolean) => {
+    try {
+      await api.put(`/api/boxes/forward-rules/${ruleId}`, { active: !active });
+      fetchForwardRules();
+    } catch {
+      toast.error('Erro ao atualizar regra');
+    }
+  };
+
+  const handleDeleteRule = async (ruleId: string) => {
+    try {
+      await api.delete(`/api/boxes/forward-rules/${ruleId}`);
+      toast.success('Regra removida');
+      fetchForwardRules();
+    } catch {
+      toast.error('Erro ao remover regra');
     }
   };
 
@@ -318,8 +408,19 @@ export default function BoxDetailPage() {
 
       {/* Emails List */}
       <div className="card-brand" data-testid="emails-list">
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h2 className="text-lg font-semibold text-gray-900">Emails Recebidos</h2>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar por assunto ou remetente..."
+              className="input-brand pl-9 py-1.5 text-sm w-full sm:w-64"
+              data-testid="search-box-emails-input"
+            />
+          </div>
         </div>
 
         {emailsLoading ? (
@@ -337,9 +438,13 @@ export default function BoxDetailPage() {
         ) : emails.length === 0 ? (
           <div className="empty-state py-16">
             <Mail className="empty-state-icon" />
-            <p className="empty-state-title">Nenhum email ainda</p>
+            <p className="empty-state-title">
+              {searchTerm ? 'Nenhum email encontrado' : 'Nenhum email ainda'}
+            </p>
             <p className="empty-state-description">
-              Os emails enviados para {box.address} aparecerão aqui
+              {searchTerm
+                ? 'Tente buscar por outro termo'
+                : `Os emails enviados para ${box.address} aparecerão aqui`}
             </p>
           </div>
         ) : (
@@ -396,6 +501,92 @@ export default function BoxDetailPage() {
           Fim da lista • {emails.length} email{emails.length !== 1 ? 's' : ''} carregado{emails.length !== 1 ? 's' : ''}
         </p>
       )}
+
+      {/* Forward Rules */}
+      <div className="card-brand" data-testid="forward-rules">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Forward className="w-5 h-5" />
+            Regras de Auto-Forward
+          </h2>
+          <button
+            onClick={() => setShowAddRule(true)}
+            className="btn-secondary btn-sm flex items-center gap-1"
+            disabled={forwardRules.length >= 3}
+          >
+            <Plus className="w-4 h-4" />
+            Nova Regra
+          </button>
+        </div>
+
+        {showAddRule && (
+          <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
+            <input
+              type="email"
+              value={newRuleEmail}
+              onChange={e => setNewRuleEmail(e.target.value)}
+              placeholder="Email destino *"
+              className="input-brand w-full text-sm"
+              autoFocus
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={newRuleFilterFrom}
+                onChange={e => setNewRuleFilterFrom(e.target.value)}
+                placeholder="Filtro remetente (opcional)"
+                className="input-brand text-sm"
+              />
+              <input
+                type="text"
+                value={newRuleFilterSubject}
+                onChange={e => setNewRuleFilterSubject(e.target.value)}
+                placeholder="Filtro assunto (opcional)"
+                className="input-brand text-sm"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowAddRule(false)} className="btn-secondary btn-sm">Cancelar</button>
+              <button onClick={handleAddRule} disabled={!newRuleEmail} className="btn-brand btn-sm">Criar</button>
+            </div>
+          </div>
+        )}
+
+        {forwardRules.length === 0 ? (
+          <div className="p-8 text-center text-gray-500 text-sm">
+            Nenhuma regra de auto-forward configurada.
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {forwardRules.map(rule => (
+              <div key={rule.id} className="flex items-center gap-3 p-4">
+                <button
+                  onClick={() => handleToggleRule(rule.id, rule.active)}
+                  className={`p-1.5 rounded-lg ${rule.active ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-400'}`}
+                  title={rule.active ? 'Desativar' : 'Ativar'}
+                >
+                  <Power className="w-4 h-4" />
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{rule.forwardTo}</p>
+                  <div className="flex gap-2 text-xs text-gray-500">
+                    {rule.filterFrom && <span>De: {rule.filterFrom}</span>}
+                    {rule.filterSubject && <span>Assunto: {rule.filterSubject}</span>}
+                    <span>{rule.forwardCount} encaminhado{rule.forwardCount !== 1 ? 's' : ''}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleDeleteRule(rule.id)}
+                  className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500"
+                  title="Remover regra"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

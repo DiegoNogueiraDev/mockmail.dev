@@ -165,23 +165,26 @@ export const getOrSet = async <T>(
 /**
  * Get cache key for user's boxes list
  */
-export const getUserBoxesCacheKey = (userId: string, page: number, limit: number): string => {
-  return `${CACHE_CONFIG.PREFIX.BOXES}${userId}:list:${page}:${limit}`;
-};
+export const getUserBoxesCacheKey = (userId: string, page: number, limit: number, search?: string): string => {
+  const base = `${CACHE_CONFIG.PREFIX.BOXES}${userId}:list:${page}:${limit}`;
+  return search ? `${base}:s:${search.substring(0, 30)}` : base;
+};;
 
 /**
  * Get cache key for user's emails list
  */
-export const getUserEmailsCacheKey = (userId: string, page: number, limit: number): string => {
-  return `${CACHE_CONFIG.PREFIX.EMAILS}${userId}:list:${page}:${limit}`;
-};
+export const getUserEmailsCacheKey = (userId: string, page: number, limit: number, search?: string): string => {
+  const base = `${CACHE_CONFIG.PREFIX.EMAILS}${userId}:list:${page}:${limit}`;
+  return search ? `${base}:s:${search.substring(0, 30)}` : base;
+};;
 
 /**
  * Get cache key for a specific box's emails
  */
-export const getBoxEmailsCacheKey = (boxId: string, page: number, limit: number): string => {
-  return `${CACHE_CONFIG.PREFIX.EMAILS}box:${boxId}:${page}:${limit}`;
-};
+export const getBoxEmailsCacheKey = (boxId: string, page: number, limit: number, search?: string): string => {
+  const base = `${CACHE_CONFIG.PREFIX.EMAILS}box:${boxId}:${page}:${limit}`;
+  return search ? `${base}:s:${search.substring(0, 30)}` : base;
+};;
 
 /**
  * Invalidate cache for a specific box's emails

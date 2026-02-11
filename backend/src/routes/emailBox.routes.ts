@@ -7,6 +7,12 @@ import {
   clearBox,
   getBoxEmails,
 } from "../controllers/emailBox.controller";
+import {
+  listForwardRules,
+  createForwardRule,
+  updateForwardRule,
+  deleteForwardRule,
+} from "../controllers/forwardRule.controller";
 import { authMiddleware } from "../middlewares/authMiddleware";
 import { validateRequest } from "../middlewares/validateRequest";
 import { emailBoxCreationLimiter } from "../middlewares/rateLimiter";
@@ -109,6 +115,58 @@ router.get("/:id/emails", async (req, res, next) => {
     await getBoxEmails(req, res);
   } catch (error) {
     logger.error(`ROUTE-EMAILBOX - GET /boxes/:id/emails - Error: ${(error as Error).message}`);
+    next(error);
+  }
+});
+
+/** @route GET /boxes/:boxId/forward-rules
+ *  @desc List forward rules for a box
+ *  @access Private
+ */
+router.get("/:boxId/forward-rules", async (req, res, next) => {
+  try {
+    await listForwardRules(req, res);
+  } catch (error) {
+    logger.error(`ROUTE-EMAILBOX - GET /boxes/:boxId/forward-rules - Error: ${(error as Error).message}`);
+    next(error);
+  }
+});
+
+/** @route POST /boxes/:boxId/forward-rules
+ *  @desc Create forward rule for a box
+ *  @access Private
+ */
+router.post("/:boxId/forward-rules", async (req, res, next) => {
+  try {
+    await createForwardRule(req, res);
+  } catch (error) {
+    logger.error(`ROUTE-EMAILBOX - POST /boxes/:boxId/forward-rules - Error: ${(error as Error).message}`);
+    next(error);
+  }
+});
+
+/** @route PUT /boxes/forward-rules/:id
+ *  @desc Update a forward rule
+ *  @access Private
+ */
+router.put("/forward-rules/:id", async (req, res, next) => {
+  try {
+    await updateForwardRule(req, res);
+  } catch (error) {
+    logger.error(`ROUTE-EMAILBOX - PUT /boxes/forward-rules/:id - Error: ${(error as Error).message}`);
+    next(error);
+  }
+});
+
+/** @route DELETE /boxes/forward-rules/:id
+ *  @desc Delete a forward rule
+ *  @access Private
+ */
+router.delete("/forward-rules/:id", async (req, res, next) => {
+  try {
+    await deleteForwardRule(req, res);
+  } catch (error) {
+    logger.error(`ROUTE-EMAILBOX - DELETE /boxes/forward-rules/:id - Error: ${(error as Error).message}`);
     next(error);
   }
 });

@@ -53,9 +53,10 @@ export const listBoxes = async (req: Request, res: Response) => {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 10), 100);
     const skip = (page - 1) * limit;
+    const search = (req.query.search as string || "").trim();
 
     // Try to get from cache first
-    const cacheKey = getUserBoxesCacheKey(userId.toString(), page, limit);
+    const cacheKey = getUserBoxesCacheKey(userId.toString(), page, limit, search || undefined);
     const cached = await getFromCache<{
       data: any[];
       pagination: { page: number; limit: number; total: number; totalPages: number };
@@ -91,22 +92,42 @@ export const listBoxes = async (req: Request, res: Response) => {
           };
         }
       });
-      logger.info(`CONTROL-EMAILBOX - Cache HIT for user ${userId} boxes (page ${page})`);
+      logger.info(`CONTROL-EMAILBOX - Cache HIT for user ${userId} boxes (page ${page}, search=${search || 'none'})`);
       return res.status(200).json({ success: true, ...cached });
     }
 
-    // Buscar TODAS as caixas do usuário (sem filtrar por expiração)
-    // O frontend irá mostrar status de "expirada" quando necessário
+    // Build filter
+    const status = (req.query.status as string || "all").toLowerCase();
+
+    const filter: any = { userId };
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.address = { $regex: escaped, $options: 'i' };
+    }
+
+    // Status filter (active/expired/all)
+    const now = new Date();
+    const legacyCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    if (status === "active") {
+      filter.$or = [
+        { expiresAt: { $gt: now } },
+        { expiresAt: null, createdAt: { $gt: legacyCutoff } },
+      ];
+    } else if (status === "expired") {
+      filter.$or = [
+        { expiresAt: { $lte: now } },
+        { expiresAt: null, createdAt: { $lte: legacyCutoff } },
+      ];
+    }
+
     const [boxes, total] = await Promise.all([
-      EmailBox.find({ userId })
+      EmailBox.find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      EmailBox.countDocuments({ userId }),
+      EmailBox.countDocuments(filter),
     ]);
-
-    const now = new Date();
 
     // Get email counts for all boxes in a single aggregation (avoids N+1)
     const boxAddresses = boxes.map((box: any) => box.address);
@@ -190,7 +211,7 @@ export const listBoxes = async (req: Request, res: Response) => {
     // Cache the result (short TTL because of time calculations)
     await setInCache(cacheKey, responseData, CACHE_TTL.SHORT);
 
-    logger.info(`CONTROL-EMAILBOX - Listed ${boxes.length} boxes for user ${userId}`);
+    logger.info(`CONTROL-EMAILBOX - Listed ${boxes.length} boxes for user ${userId}${search ? ` (search: ${search})` : ''}`);
     res.status(200).json({
       success: true,
       ...responseData,
@@ -199,7 +220,7 @@ export const listBoxes = async (req: Request, res: Response) => {
     logger.error(`CONTROL-EMAILBOX - Error listing boxes: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
-};
+};;
 
 /**
  * Get a single email box by ID
@@ -497,23 +518,62 @@ export const getBoxEmails = async (req: Request, res: Response) => {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);
     const skip = (page - 1) * limit;
+    const search = (req.query.search as string || "").trim();
+    const dateFrom = req.query.dateFrom as string;
+    const dateTo = req.query.dateTo as string;
+    const hasAttachments = req.query.hasAttachments as string;
+    const sortParam = (req.query.sort as string || "date_desc").toLowerCase();
 
-    // Check cache first
-    const cacheKey = getBoxEmailsCacheKey(id, page, limit);
-    const cached = await getFromCache<{ data: any[]; pagination: any }>(cacheKey);
-    if (cached) {
-      logger.info(`CONTROL-EMAILBOX - Cache HIT for box ${id} emails page ${page}`);
-      return res.status(200).json({ success: true, ...cached });
+    // Check cache only for default queries
+    const useCache = !dateFrom && !dateTo && !hasAttachments && sortParam === "date_desc";
+    if (useCache) {
+      const cacheKey = getBoxEmailsCacheKey(id, page, limit, search || undefined);
+      const cached = await getFromCache<{ data: any[]; pagination: any }>(cacheKey);
+      if (cached) {
+        logger.info(`CONTROL-EMAILBOX - Cache HIT for box ${id} emails page ${page}${search ? ` (search: ${search})` : ''}`);
+        return res.status(200).json({ success: true, ...cached });
+      }
     }
 
+    // Build filter
+    const filter: any = { to: box.address };
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { from: { $regex: escaped, $options: 'i' } },
+        { subject: { $regex: escaped, $options: 'i' } },
+      ];
+    }
+
+    // Date range filter
+    if (dateFrom || dateTo) {
+      filter.date = {};
+      if (dateFrom) filter.date.$gte = new Date(dateFrom);
+      if (dateTo) filter.date.$lte = new Date(dateTo);
+    }
+
+    // Attachments filter
+    if (hasAttachments === 'true') {
+      filter['attachments.0'] = { $exists: true };
+    } else if (hasAttachments === 'false') {
+      filter['attachments.0'] = { $exists: false };
+    }
+
+    // Sort
+    const sortMap: Record<string, any> = {
+      date_desc: { date: -1, processedAt: -1 },
+      date_asc: { date: 1, processedAt: 1 },
+    };
+    const sort = sortMap[sortParam] || sortMap.date_desc;
+
     const [emails, total] = await Promise.all([
-      Email.find({ to: box.address })
-        .sort({ createdAt: -1 })
+      Email.find(filter)
+        .sort(sort)
         .skip(skip)
         .limit(limit)
-        .select('from subject date processedAt')
+        .select('from subject date processedAt attachments readAt')
         .lean(),
-      Email.countDocuments({ to: box.address }),
+      Email.countDocuments(filter),
     ]);
 
     const formattedEmails = emails.map((email: any) => ({
@@ -521,7 +581,8 @@ export const getBoxEmails = async (req: Request, res: Response) => {
       from: email.from,
       subject: email.subject,
       receivedAt: email.date || email.processedAt,
-      read: false,
+      read: !!email.readAt,
+      hasAttachments: Array.isArray(email.attachments) && email.attachments.length > 0,
     }));
 
     const responseData = {
@@ -534,13 +595,16 @@ export const getBoxEmails = async (req: Request, res: Response) => {
       },
     };
 
-    // Cache the response (SHORT TTL - 1 min)
-    await setInCache(cacheKey, responseData, CACHE_TTL.SHORT);
+    // Cache only default queries
+    if (useCache) {
+      const cacheKey = getBoxEmailsCacheKey(id, page, limit, search || undefined);
+      await setInCache(cacheKey, responseData, CACHE_TTL.SHORT);
+    }
 
-    logger.info(`CONTROL-EMAILBOX - Retrieved ${emails.length} emails for box ${box.address}`);
+    logger.info(`CONTROL-EMAILBOX - Retrieved ${emails.length} emails for box ${box.address}${search ? ` (search: ${search})` : ''}`);
     res.status(200).json({ success: true, ...responseData });
   } catch (error) {
     logger.error(`CONTROL-EMAILBOX - Error getting box emails: ${(error as Error).message}`);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
-};
+};;;

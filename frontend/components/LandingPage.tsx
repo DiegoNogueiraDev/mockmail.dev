@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import {
   Mail,
@@ -13,8 +14,45 @@ import {
   Globe,
   Lock,
   BarChart3,
-  ChevronRight
+  ChevronRight,
+  ChevronDown,
+  HelpCircle,
 } from 'lucide-react';
+
+const faqs = [
+  {
+    q: 'O MockMail é gratuito?',
+    a: 'Sim! O plano gratuito inclui 500 emails/dia, caixas temporárias de 24h, webhooks e API completa.',
+  },
+  {
+    q: 'Por quanto tempo os emails ficam disponíveis?',
+    a: 'As caixas expiram em 24 horas. Quando um novo email chega, a expiração é renovada automaticamente.',
+  },
+  {
+    q: 'Posso usar em testes automatizados (CI/CD)?',
+    a: 'Sim! Crie uma API Key e use nossa API REST. Temos exemplos para Cypress, Pytest e Jest na documentação.',
+  },
+  {
+    q: 'Os emails são seguros?',
+    a: 'Os emails são armazenados criptografados e deletados automaticamente após 24h. Não compartilhamos dados com terceiros.',
+  },
+  {
+    q: 'Posso receber webhooks quando um email chegar?',
+    a: 'Sim! Configure webhooks para receber notificações em tempo real quando emails chegam, são abertos ou links são clicados.',
+  },
+  {
+    q: 'Existe limite de tamanho de email?',
+    a: 'Emails de até 25MB são aceitos, incluindo anexos. Os metadados dos anexos são preservados.',
+  },
+  {
+    q: 'Como funciona a API Key?',
+    a: 'Gere uma API Key no dashboard com permissões específicas (leitura, escrita, gerenciamento). Use o header X-API-Key nas requisições.',
+  },
+  {
+    q: 'O MockMail tem SLA?',
+    a: 'O serviço tem uptime target de 99.9%. Veja nosso status page para monitoramento em tempo real.',
+  },
+];
 
 const features = [
   {
@@ -58,6 +96,8 @@ const benefits = [
 ];
 
 export default function LandingPage() {
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
+
   return (
     <div className="min-h-screen bg-white">
       {/* Skip Link for Accessibility */}
@@ -426,6 +466,43 @@ console.log('📬 Email criado:', email);
         </section>
       </main>
 
+      {/* FAQ */}
+      <section className="py-16 md:py-24 bg-gray-50" id="faq">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-50 rounded-full mb-4">
+              <HelpCircle className="w-4 h-4 text-purple-600" />
+              <span className="text-sm font-medium text-purple-700">FAQ</span>
+            </div>
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
+              Perguntas Frequentes
+            </h2>
+          </div>
+          <div className="space-y-3">
+            {faqs.map((faq, i) => (
+              <div key={i} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <button
+                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  className="w-full flex items-center justify-between p-5 text-left hover:bg-gray-50 transition-colors"
+                >
+                  <span className="font-medium text-gray-900 pr-4">{faq.q}</span>
+                  <ChevronDown
+                    className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform ${
+                      openFaq === i ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+                {openFaq === i && (
+                  <div className="px-5 pb-5">
+                    <p className="text-gray-600">{faq.a}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer
         className="border-t border-gray-200 py-12 md:py-16"
@@ -466,6 +543,16 @@ console.log('📬 Email criado:', email);
                 <li>
                   <Link href="#features" className="text-gray-600 hover:text-gray-900 transition-colors">
                     Recursos
+                  </Link>
+                </li>
+                <li>
+                  <Link href="#faq" className="text-gray-600 hover:text-gray-900 transition-colors">
+                    FAQ
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/status" className="text-gray-600 hover:text-gray-900 transition-colors">
+                    Status
                   </Link>
                 </li>
               </ul>

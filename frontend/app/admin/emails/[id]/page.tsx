@@ -21,6 +21,14 @@ import {
   Link as LinkIcon,
   Image as ImageIcon,
   Paperclip,
+  Eye,
+  MousePointerClick,
+  Download,
+  MailOpen,
+  FileCode,
+  MessageSquare,
+  Forward,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -39,6 +47,18 @@ interface EmailAttachment {
   size: number;
 }
 
+interface TrackingClick {
+  url: string;
+  clickedAt: string;
+}
+
+interface TrackingData {
+  openedAt: string | null;
+  openCount: number;
+  clickCount: number;
+  clicks: TrackingClick[];
+}
+
 interface EmailDetail {
   id: string;
   from: string;
@@ -50,6 +70,9 @@ interface EmailDetail {
   processedAt: string;
   boxAddress: string;
   attachments?: EmailAttachment[];
+  readAt?: string;
+  tracking?: TrackingData;
+  headers?: Record<string, string>;
 }
 
 export default function EmailDetailPage() {
@@ -61,8 +84,12 @@ export default function EmailDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw'>('html');
+  const [viewMode, setViewMode] = useState<'html' | 'text' | 'raw' | 'headers'>('html');
   const [copied, setCopied] = useState<string | null>(null);
+  const [thread, setThread] = useState<Array<{ id: string; from: string; to: string; subject: string; date: string; readAt?: string }>>([]);
+  const [showForwardModal, setShowForwardModal] = useState(false);
+  const [forwardTo, setForwardTo] = useState('');
+  const [forwarding, setForwarding] = useState(false);
 
   // Sanitizar HTML do email para prevenir XSS
   const sanitizedHtml = useMemo(() => {
@@ -97,8 +124,23 @@ export default function EmailDetailPage() {
     }
   };
 
+  const fetchThread = async () => {
+    try {
+      const response = await api.get<{ success: boolean; data: typeof thread }>(`/api/mail/emails/${emailId}/thread`);
+      const result = response as unknown as { success: boolean; data: typeof thread };
+      if (result.success && result.data.length > 1) {
+        setThread(result.data);
+      } else {
+        setThread([]);
+      }
+    } catch {
+      setThread([]);
+    }
+  };
+
   useEffect(() => {
     fetchEmail();
+    fetchThread();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emailId]);
 
@@ -120,6 +162,41 @@ export default function EmailDetailPage() {
       toast.error('Erro ao excluir email');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleToggleRead = async () => {
+    try {
+      const response = await api.patch(`/api/mail/emails/${emailId}/read`);
+      if (response.success) {
+        const result = response as unknown as { success: boolean; data: { read: boolean } };
+        setEmail(prev => prev ? { ...prev, readAt: result.data.read ? new Date().toISOString() : undefined } : prev);
+        toast.success(result.data.read ? 'Marcado como lido' : 'Marcado como não lido');
+      }
+    } catch {
+      toast.error('Erro ao alterar status');
+    }
+  };
+
+  const handleForward = async () => {
+    if (!forwardTo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forwardTo)) {
+      toast.error('Email inválido');
+      return;
+    }
+    setForwarding(true);
+    try {
+      const response = await api.post(`/api/mail/emails/${emailId}/forward`, { forwardTo });
+      if (response.success) {
+        toast.success('Email encaminhado com sucesso');
+        setShowForwardModal(false);
+        setForwardTo('');
+      } else {
+        toast.error((response as any).message || 'Erro ao encaminhar');
+      }
+    } catch {
+      toast.error('Erro ao encaminhar email');
+    } finally {
+      setForwarding(false);
     }
   };
 
@@ -255,17 +332,77 @@ export default function EmailDetailPage() {
           </div>
 
           {/* Actions */}
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="btn-secondary flex items-center gap-2 text-red-600 hover:bg-red-50 hover:border-red-200"
-            data-testid="delete-email"
-          >
-            <Trash2 className={`w-4 h-4 ${deleting ? 'animate-pulse' : ''}`} />
-            <span>Excluir</span>
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowForwardModal(true)}
+              className="btn-secondary flex items-center gap-2"
+              data-testid="forward-email"
+            >
+              <Forward className="w-4 h-4" />
+              <span>Encaminhar</span>
+            </button>
+            <button
+              onClick={handleToggleRead}
+              className="btn-secondary flex items-center gap-2"
+              data-testid="toggle-read"
+            >
+              <MailOpen className="w-4 h-4" />
+              <span>{email.readAt ? 'Marcar não lido' : 'Marcar lido'}</span>
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="btn-secondary flex items-center gap-2 text-red-600 hover:bg-red-50 hover:border-red-200"
+              data-testid="delete-email"
+            >
+              <Trash2 className={`w-4 h-4 ${deleting ? 'animate-pulse' : ''}`} />
+              <span>Excluir</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Tracking Info */}
+      {email.tracking && (email.tracking.openCount > 0 || email.tracking.clickCount > 0) && (
+        <div className="card-brand p-4" data-testid="email-tracking">
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Eye className="w-4 h-4 text-blue-500" />
+              <span className="text-sm text-gray-600">
+                {email.tracking.openCount} abertura{email.tracking.openCount !== 1 ? 's' : ''}
+              </span>
+              {email.tracking.openedAt && (
+                <span className="text-xs text-gray-400">
+                  (primeira: {new Date(email.tracking.openedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })})
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <MousePointerClick className="w-4 h-4 text-purple-500" />
+              <span className="text-sm text-gray-600">
+                {email.tracking.clickCount} clique{email.tracking.clickCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+            {email.tracking.clicks.length > 0 && (
+              <details className="w-full mt-2">
+                <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
+                  Ver detalhes dos cliques
+                </summary>
+                <ul className="mt-2 space-y-1 max-h-32 overflow-auto">
+                  {email.tracking.clicks.map((click, i) => (
+                    <li key={i} className="flex items-center gap-2 text-xs text-gray-500">
+                      <span className="truncate flex-1">{click.url}</span>
+                      <span className="flex-shrink-0">
+                        {new Date(click.clickedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* View Mode Tabs */}
       <div className="card-brand" data-testid="email-content">
@@ -305,6 +442,18 @@ export default function EmailDetailPage() {
           >
             <Code className="w-4 h-4" />
             HTML Bruto
+          </button>
+          <button
+            onClick={() => setViewMode('headers')}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              viewMode === 'headers'
+                ? 'border-[#5636d1] text-[#5636d1]'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+            data-testid="view-headers-tab"
+          >
+            <FileCode className="w-4 h-4" />
+            Headers
           </button>
         </div>
 
@@ -351,6 +500,20 @@ export default function EmailDetailPage() {
               </pre>
             </div>
           )}
+          {viewMode === 'headers' && (
+            <div className="font-mono text-xs space-y-1 max-h-96 overflow-auto" data-testid="email-headers-content">
+              {email.headers && Object.keys(email.headers).length > 0 ? (
+                Object.entries(email.headers).map(([key, value]) => (
+                  <div key={key} className="flex gap-2 py-1 border-b border-gray-100 last:border-0">
+                    <span className="font-bold text-blue-600 min-w-48 flex-shrink-0">{key}:</span>
+                    <span className="text-gray-700 break-all">{value}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-gray-500 text-sm">Nenhum header SMTP disponível para este email.</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -373,9 +536,46 @@ export default function EmailDetailPage() {
                     {att.contentType} &middot; {att.size < 1024 ? `${att.size} B` : att.size < 1048576 ? `${(att.size / 1024).toFixed(1)} KB` : `${(att.size / 1048576).toFixed(1)} MB`}
                   </p>
                 </div>
+                <a
+                  href={`${api.baseUrl}/api/mail/emails/${email.id}/attachments/${index}`}
+                  download={att.filename}
+                  className="p-2 rounded-lg hover:bg-gray-200 transition-colors flex-shrink-0"
+                  title="Baixar anexo"
+                >
+                  <Download className="w-4 h-4 text-gray-500" />
+                </a>
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Thread Sidebar */}
+      {thread.length > 1 && (
+        <div className="card-brand p-4" data-testid="email-thread">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
+            <MessageSquare className="w-4 h-4" />
+            Conversa ({thread.length})
+          </h3>
+          <div className="space-y-1 max-h-64 overflow-auto">
+            {thread.map(t => (
+              <Link
+                key={t.id}
+                href={`/admin/emails/${t.id}`}
+                className={`block p-2 rounded-lg transition-colors ${
+                  t.id === email.id
+                    ? 'bg-[#5636d1]/10 border border-[#5636d1]/20'
+                    : 'hover:bg-gray-50'
+                }`}
+              >
+                <p className="text-sm font-medium text-gray-900 truncate">{t.from}</p>
+                <p className="text-xs text-gray-500 truncate">{t.subject}</p>
+                <p className="text-xs text-gray-400">
+                  {new Date(t.date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                </p>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 
@@ -460,6 +660,47 @@ export default function EmailDetailPage() {
               </ul>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Forward Modal */}
+      {showForwardModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Forward className="w-5 h-5" />
+                Encaminhar Email
+              </h3>
+              <button onClick={() => setShowForwardModal(false)} className="p-1 rounded hover:bg-gray-100">
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Encaminhar &ldquo;{email.subject}&rdquo; para:
+            </p>
+            <input
+              type="email"
+              value={forwardTo}
+              onChange={e => setForwardTo(e.target.value)}
+              placeholder="email@exemplo.com"
+              className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#5636d1] focus:border-transparent outline-none"
+              autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleForward()}
+            />
+            <div className="flex gap-2 mt-4 justify-end">
+              <button onClick={() => setShowForwardModal(false)} className="btn-secondary">
+                Cancelar
+              </button>
+              <button
+                onClick={handleForward}
+                disabled={forwarding || !forwardTo}
+                className="btn-brand flex items-center gap-2"
+              >
+                {forwarding ? 'Enviando...' : 'Encaminhar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

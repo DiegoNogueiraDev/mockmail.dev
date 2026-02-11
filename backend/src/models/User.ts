@@ -23,6 +23,11 @@ export interface IUser extends Document {
   lastLogin?: Date;
   createdAt: Date;
   updatedAt: Date;
+  notifications?: {
+    emailOnReceive: boolean;
+    emailOnBoxExpire: boolean;
+    digestFrequency: 'instant' | 'hourly' | 'daily' | 'off';
+  };
   hasPermission(permission: Permission): boolean;
   hasRole(...roles: UserRole[]): boolean;
 }
@@ -52,10 +57,15 @@ const UserSchema: Schema = new Schema(
       enum: ['read:emails', 'write:emails', 'admin:users', 'admin:system']
     }],
     isActive: { type: Boolean, default: true },
-    lastLogin: { type: Date }
+    lastLogin: { type: Date },
+    notifications: {
+      emailOnReceive: { type: Boolean, default: false },
+      emailOnBoxExpire: { type: Boolean, default: false },
+      digestFrequency: { type: String, enum: ['instant', 'hourly', 'daily', 'off'], default: 'off' },
+    },
   },
   { timestamps: true }
-);;
+);;;
 
 // Método para verificar se usuário tem uma permissão específica
 UserSchema.methods.hasPermission = function(permission: Permission): boolean {

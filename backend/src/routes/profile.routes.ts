@@ -5,6 +5,7 @@ import {
   updateProfile,
   changePassword,
   getPasswordRequirements,
+  updateNotifications,
 } from "../controllers/profile.controller";
 
 const router = Router();
@@ -23,5 +24,8 @@ router.put("/", updateProfile);
 
 // Change password
 router.post("/change-password", changePassword);
+
+// Update notification preferences
+router.put("/notifications", updateNotifications);
 
 export default router;

@@ -196,4 +196,80 @@ router.get("/usage", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @route GET /dashboard/usage-history
+ * @desc Get email volume per day for the last N days (default 7)
+ * @access Private
+ */
+router.get("/usage-history", async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    const userId = user?._id?.toString() || user?.id;
+    const days = Math.min(Math.max(parseInt(req.query.days as string) || 7, 1), 30);
+
+    logger.info(`ROUTE-DASHBOARD - GET /dashboard/usage-history - User: ${user?.email}, days: ${days}`);
+
+    if (!userId) {
+      res.status(401).json({ error: "User not authenticated" });
+      return;
+    }
+
+    // Check cache
+    const cacheKey = `dashboard:usage-history:${userId}:${days}`;
+    const cached = await getFromCache<any>(cacheKey);
+    if (cached) {
+      return res.json({ success: true, data: cached });
+    }
+
+    // Get user's boxes
+    const userBoxes = await EmailBox.find({ userId }).select("_id").lean();
+    const boxIds = userBoxes.map((box) => box._id);
+
+    // Build date range
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - (days - 1));
+    startDate.setHours(0, 0, 0, 0);
+
+    // Aggregate emails per day
+    const pipeline = [
+      {
+        $match: {
+          emailBox: { $in: boxIds },
+          createdAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 as const } },
+    ];
+
+    const results = await Email.aggregate(pipeline);
+
+    // Fill in missing days with 0
+    const history: { date: string; count: number }[] = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().split("T")[0];
+      const found = results.find((r: any) => r._id === dateStr);
+      history.push({ date: dateStr, count: found ? found.count : 0 });
+    }
+
+    await setInCache(cacheKey, history, CACHE_TTL.SHORT);
+
+    res.json({ success: true, data: history });
+  } catch (error) {
+    logger.error(
+      `ROUTE-DASHBOARD - GET /dashboard/usage-history - Error: ${(error as Error).message}`
+    );
+    res.status(500).json({ error: "Failed to fetch usage history" });
+  }
+});
+
 export default router;

@@ -82,3 +82,29 @@ export const parseBody = (rawHtml: string) => {
     throw new Error("Falha ao processar o corpo do e-mail.");
   }
 };
+
+/**
+ * Reescreve links <a href> no HTML para passar pelo tracker de cliques.
+ * Não reescreve: mailto:, tel:, #anchors, links internos do tracker.
+ */
+const rewriteLinks = (html: string, emailId: string, baseUrl: string): string => {
+  if (!html) return html;
+  return html.replace(
+    /(<a\s[^>]*href=["'])([^"']+)(["'][^>]*>)/gi,
+    (match, prefix, url, suffix) => {
+      // Não reescrever links especiais
+      if (
+        url.startsWith('mailto:') ||
+        url.startsWith('tel:') ||
+        url.startsWith('#') ||
+        url.includes('/api/mail/track/')
+      ) {
+        return match;
+      }
+      const trackUrl = `${baseUrl}/api/mail/track/click/${emailId}?url=${encodeURIComponent(url)}`;
+      return `${prefix}${trackUrl}${suffix}`;
+    }
+  );
+};
+
+export { rewriteLinks };

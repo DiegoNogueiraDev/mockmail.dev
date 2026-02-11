@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import RecentEmailsCard from '@/components/dashboard/RecentEmailsCard';
+import UsageChartCard from '@/components/dashboard/UsageChartCard';
 
 interface DashboardStats {
   totalBoxes: number;
@@ -329,6 +330,9 @@ export default function DashboardPage() {
           )}
         </div>
       )}
+
+      {/* Usage Chart */}
+      <UsageChartCard days={7} />
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

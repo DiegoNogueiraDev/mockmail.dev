@@ -476,6 +476,48 @@ export const getDeliveries = async (req: Request, res: Response) => {
 };
 
 /**
+ * Retry a failed webhook delivery.
+ */
+export const retryDelivery = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { id, deliveryId } = req.params;
+
+    // Verify ownership of webhook
+    const webhook = await Webhook.findOne({ _id: id, userId });
+    if (!webhook) {
+      return res.status(404).json({ success: false, error: "Webhook não encontrado" });
+    }
+
+    // Find the failed delivery
+    const delivery = await WebhookDelivery.findOne({
+      _id: deliveryId,
+      webhookId: id,
+      success: false,
+    });
+
+    if (!delivery) {
+      return res.status(404).json({ success: false, error: "Delivery falhada não encontrada" });
+    }
+
+    // Re-deliver with original payload
+    const { deliverWebhook } = await import("../services/webhook.service");
+    const success = await deliverWebhook(webhook, delivery.event as WebhookEvent, delivery.payload as Record<string, unknown>);
+
+    res.json({
+      success: true,
+      data: {
+        retried: true,
+        deliverySuccess: success,
+      },
+    });
+  } catch (error) {
+    logger.error("Error retrying delivery:", error);
+    res.status(500).json({ success: false, error: "Erro ao reenviar webhook" });
+  }
+};
+
+/**
  * Get available webhook events
  */
 export const getAvailableEvents = async (_req: Request, res: Response) => {
