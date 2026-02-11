@@ -14,6 +14,7 @@
 !.env.*.example
 !**/.env.example
 !**/.env.*.example
+.mcp.json
 
 # Private keys and certificates
 *.key

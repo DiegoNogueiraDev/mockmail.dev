@@ -3,6 +3,9 @@
 ## O que é
 Sistema de email temporário: API + Dashboard + Processador de emails.
 
+# Memory
+Consulte sempre o context-hub para redução de contexto.
+
 ## Estrutura
 ```
 backend/          → API Express/TypeScript (porta 3000/3010)
